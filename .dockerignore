@@ -1,0 +1,25 @@
+# Dependency directories
+node_modules/
+
+# Environment variables
+.env
+.env.*
+
+# Git files
+.git
+.gitignore
+
+# Docker files
+Dockerfile
+.dockerignore
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# IDE specific files
+.idea
+.vscode
+*.swp
+*.swo
