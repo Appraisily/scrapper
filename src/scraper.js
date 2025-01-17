@@ -1,5 +1,4 @@
 const puppeteer = require('puppeteer');
-require('dotenv').config();
 
 class WorthpointScraper {
   constructor() {
