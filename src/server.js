@@ -6,6 +6,9 @@ const { getCredentials } = require('./secrets');
 const app = express();
 const port = 3000;
 
+let scraper = null;
+let initializationInProgress = false;
+
 // Graceful shutdown handler
 async function shutdown() {
   if (scraper) {
@@ -22,11 +25,16 @@ process.on('SIGINT', shutdown);
 app.use(cors());
 app.use(express.json());
 
-// Initialize scraper instance
-let scraper = null;
-
-// Initialize scraper on server start
 async function initializeScraper() {
+  if (initializationInProgress) {
+    // Wait for existing initialization to complete
+    while (initializationInProgress) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return;
+  }
+
+  initializationInProgress = true;
   scraper = new WorthpointScraper();
   await scraper.initialize();
   const credentials = await getCredentials();
@@ -38,12 +46,7 @@ async function initializeScraper() {
 app.get('/api/art', async (req, res) => {
   try {
     if (!scraper) {
-      try {
-        await initializeScraper();
-      } catch (error) {
-        console.error('Failed to initialize scraper:', error);
-        return res.status(500).json({ error: 'Failed to initialize scraper' });
-      }
+      await initializeScraper();
     }
 
     const searchUrl = 'https://www.worthpoint.com/inventory/search?searchForm=search&ignoreSavedPreferences=true&max=100&sort=SaleDate&_img=false&img=true&_noGreyList=false&noGreyList=true&categories=fine-art&rMin=200&saleDate=ALL_TIME';
@@ -60,11 +63,6 @@ app.get('/api/art', async (req, res) => {
 });
 
 // Start the server
-app.listen(port, async () => {
-  try {
-    await initializeScraper();
-    console.log(`Server running on port ${port}`);
-  } catch (error) {
-    console.error('Failed to initialize scraper:', error);
-  }
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });

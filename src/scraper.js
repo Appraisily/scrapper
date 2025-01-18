@@ -16,21 +16,18 @@ class WorthpointScraper {
 
   async login(username, password) {
     try {
-      await this.page.goto('https://www.worthpoint.com/app/login/auth');
+      await this.page.goto('https://www.worthpoint.com/login');
       
       console.log('Waiting for login form...');
       
       // Wait for login form and fill credentials
-      await this.page.waitForSelector('#username1');
-      await this.page.type('#username1', username);
-      await this.page.waitForSelector('#j_password');
-      await this.page.type('#j_password', password);
+      await this.page.waitForSelector('input[name="email"]');
+      await this.page.type('input[name="email"]', username);
+      await this.page.waitForSelector('input[name="password"]');
+      await this.page.type('input[name="password"]', password);
       
-      // Click remember me checkbox
-      await this.page.click('#_spring_security_remember_me');
-      
-      // Click login button and wait for navigation
-      const submitButton = await this.page.waitForSelector('#loginBtn');
+      // Click login button
+      const submitButton = await this.page.waitForSelector('button[type="submit"]');
       await Promise.all([
         this.page.waitForNavigation(),
         submitButton.click()
@@ -53,15 +50,11 @@ class WorthpointScraper {
   async verifyLogin() {
     try {
       // Wait for an element that only appears when logged in
-      // Check for multiple elements that indicate successful login
-      const loggedInElements = await Promise.race([
-        this.page.waitForSelector('.styles__StyledUserMenu-sc-w8j9jn-0', { timeout: 5000 }),
-        this.page.waitForSelector('.styles__StyledAccountMenu-sc-1c737pn-0', { timeout: 5000 })
-      ]);
+      await this.page.waitForSelector('.user-menu', { timeout: 5000 });
       
       // Also verify we're not still on the login page
       const currentUrl = this.page.url();
-      if (currentUrl.includes('/app/login/auth')) {
+      if (currentUrl.includes('/login')) {
         return false;
       }
       
