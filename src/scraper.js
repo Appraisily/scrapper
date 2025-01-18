@@ -10,24 +10,26 @@ class WorthpointScraper {
 
   async initialize() {
     console.log('Initializing browser...');
-    // Configure Chrome flags for better stealth
     const flags = [
       '--enable-font-antialiasing',
       '--font-render-hinting=medium',
       '--window-size=1920,1080',
+      '--disable-blink-features',
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--disable-infobars',
-      '--disable-notifications',
       '--disable-blink-features=AutomationControlled',
-      '--disable-web-security',
-      '--ignore-certificate-errors'
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--enable-features=NetworkService,NetworkServiceInProcess',
+      '--force-color-profile=srgb',
+      '--metrics-recording-only',
+      '--password-store=basic'
     ];
 
     this.browser = await puppeteer.launch({
       headless: 'new',
+      ignoreHTTPSErrors: true,
       args: flags
     });
     console.log('Browser launched successfully');
@@ -202,6 +204,9 @@ class WorthpointScraper {
     await this.page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Cache-Control': 'max-age=0',
+      'Connection': 'keep-alive',
+      'DNT': '1',
       'sec-ch-ua': '"Not_A_Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Windows"',
@@ -220,38 +225,43 @@ class WorthpointScraper {
 
   async login(username, password) {
     try {
-      // Add random delay before navigation
       await this.randomDelay();
       
+      // Set initial cookies from HAR
+      await this.page.setCookie(
+        { name: 'cky-consent', value: 'yes', domain: '.worthpoint.com' },
+        { name: 'cky-action', value: 'yes', domain: '.worthpoint.com' },
+        { name: '_gid', value: 'GA1.2.'+Math.floor(Math.random()*1000000000), domain: '.worthpoint.com' },
+        { name: '_ga', value: 'GA1.1.'+Math.floor(Math.random()*1000000000), domain: '.worthpoint.com' }
+      );
+
       await this.page.goto('https://www.worthpoint.com/login', {
-        waitUntil: 'networkidle0',
+        waitUntil: ['domcontentloaded', 'networkidle0'],
         timeout: 30000
       });
       
-      // Wait for any potential CAPTCHA or protection challenges
       await this.handleProtection();
-      
-      // Log the current URL and HTML content
-      const currentUrl = await this.page.url();
-      console.log('Current URL:', currentUrl);
-      
-      const pageContent = await this.page.content();
-      console.log('Page HTML:', pageContent);
       
       console.log('Waiting for login form...');
       
-      // Wait for login form and fill credentials
-      await this.page.waitForSelector('input[name="email"]');
+      await this.page.waitForSelector('input[name="email"]', { visible: true });
+      await this.randomDelay(500, 1000);
       await this.page.type('input[name="email"]', username);
-      await this.page.waitForSelector('input[name="password"]');
+      
+      await this.randomDelay(300, 800);
+      
+      await this.page.waitForSelector('input[name="password"]', { visible: true });
       await this.page.type('input[name="password"]', password);
       
-      // Click login button
-      const submitButton = await this.page.waitForSelector('button[type="submit"]');
+      await this.randomDelay(500, 1200);
+      
+      const submitButton = await this.page.waitForSelector('button[type="submit"]', { visible: true });
       await Promise.all([
         this.page.waitForNavigation(),
         submitButton.click()
       ]);
+      
+      await this.randomDelay(1000, 2000);
 
       // Verify login success
       const isLoggedIn = await this.verifyLogin();
@@ -269,6 +279,23 @@ class WorthpointScraper {
 
   async handleProtection() {
     try {
+      // Add more realistic mouse movements
+      await this.page.evaluate(() => {
+        const moveCount = Math.floor(Math.random() * 10) + 5;
+        for (let i = 0; i < moveCount; i++) {
+          const event = new MouseEvent('mousemove', {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX: Math.random() * window.innerWidth,
+            clientY: Math.random() * window.innerHeight,
+            screenX: Math.random() * screen.width,
+            screenY: Math.random() * screen.height,
+          });
+          document.dispatchEvent(event);
+        }
+      });
+
       // Add random viewport resizing
       const width = 1920 + Math.floor(Math.random() * 100);
       const height = 1080 + Math.floor(Math.random() * 100);
@@ -279,7 +306,6 @@ class WorthpointScraper {
         const pxCaptcha = document.querySelector('#px-captcha');
         const pxBlock = document.querySelector('.px-block');
         
-        // Simulate natural scrolling
         const scrollAmount = Math.floor(Math.random() * 100) + 50;
         window.scrollBy({ 
           top: scrollAmount, 
@@ -320,12 +346,10 @@ class WorthpointScraper {
       if (isPxChallenge) {
         console.log('PerimeterX challenge detected, waiting for resolution...');
         
-        // Multiple interactions with random delays
         for (let i = 0; i < 3; i++) {
           await this.randomDelay(1500, 3000);
           
           await this.page.evaluate(() => {
-            // Simulate more complex mouse behavior
             const events = ['mousemove', 'mousedown', 'mouseup'];
             events.forEach(eventType => {
               const event = new MouseEvent(eventType, {
@@ -351,18 +375,7 @@ class WorthpointScraper {
             }
           });
         }
-        
-        await this.page.evaluate(() => {
-          // Try to trigger any pending callbacks
-          if (window._pxAppId) {
-            document.cookie = `_px${window._pxAppId}=; path=/;`;
-            // Add common PerimeterX cookies
-            document.cookie = `_pxvid=${Math.random().toString(36).substring(2)}; path=/`;
-            document.cookie = `_px3=${Math.random().toString(36).substring(2)}; path=/`;
-          }
-        });
-        
-        // Wait for challenge to clear
+
         await this.page.waitForFunction(
           () => !document.querySelector('#px-captcha') && !document.querySelector('.px-block'),
           { timeout: 30000 }
