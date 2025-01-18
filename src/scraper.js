@@ -12,6 +12,8 @@ class WorthpointScraper {
     console.log('Initializing browser...');
     // Configure Chrome flags for better stealth
     const flags = [
+      '--enable-font-antialiasing',
+      '--font-render-hinting=medium',
       '--window-size=1920,1080',
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -34,10 +36,95 @@ class WorthpointScraper {
     // Override navigator.webdriver
     await this.page.evaluateOnNewDocument(() => {
       delete Object.getPrototypeOf(navigator).webdriver;
+      
+      // Add more sophisticated browser APIs
+      window.Notification = class Notification {
+        static permission = 'default';
+        static requestPermission() {
+          return Promise.resolve('default');
+        }
+      };
+
+      // Add WebGL support
+      const getParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        // Spoof renderer info
+        if (parameter === 37445) {
+          return 'Intel Inc.';
+        }
+        if (parameter === 37446) {
+          return 'Intel(R) Iris(TM) Graphics 6100';
+        }
+        return getParameter.apply(this, arguments);
+      };
+
+      // Add Font loading API
+      window.FontFace = class FontFace {
+        constructor(family, source, descriptors) {
+          this.family = family;
+          this.source = source;
+          this.descriptors = descriptors;
+          this.status = 'loaded';
+        }
+        load() {
+          return Promise.resolve(this);
+        }
+      };
+      
       // Overwrite the languages with only English
       Object.defineProperty(navigator, 'languages', {
         get: () => ['en-US', 'en']
       });
+      
+      // Add common browser functions
+      window.chrome = {
+        runtime: {},
+        loadTimes: () => {},
+        csi: () => ({
+          startE: Date.now(),
+          onloadT: Date.now() + 100,
+          pageT: Date.now() + 200,
+          tran: 15
+        }),
+        app: {
+          isInstalled: false,
+          getDetails: () => {},
+          getIsInstalled: () => false,
+          runningState: () => 'normal'
+        },
+        webstore: {
+          onInstallStageChanged: {},
+          onDownloadProgress: {}
+        }
+      };
+      
+      // Add plugins
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          {
+            0: {type: 'application/x-google-chrome-pdf'},
+            description: 'Portable Document Format',
+            filename: 'internal-pdf-viewer',
+            length: 1,
+            name: 'Chrome PDF Plugin'
+          }
+        ]
+      });
+      
+      // Add media devices
+      if (navigator.mediaDevices) {
+        const enumerateDevices = navigator.mediaDevices.enumerateDevices;
+        navigator.mediaDevices.enumerateDevices = function() {
+          return enumerateDevices.apply(this, arguments)
+            .then(devices => {
+              return devices.length ? devices : [
+                {deviceId: 'default', kind: 'audioinput', label: '', groupId: 'default'},
+                {deviceId: 'default', kind: 'audiooutput', label: '', groupId: 'default'},
+                {deviceId: 'default', kind: 'videoinput', label: '', groupId: 'default'}
+              ];
+            });
+        };
+      }
     });
 
     await this.page.setViewport({ width: 1920, height: 1080 });
@@ -115,15 +202,73 @@ class WorthpointScraper {
   async handleProtection() {
     try {
       // Check for PerimeterX challenge
-      const isPxChallenge = await this.page.evaluate(() => {
-        return document.querySelector('#px-captcha') !== null;
+      const isPxChallenge = await this.page.evaluate(async () => {
+        const pxCaptcha = document.querySelector('#px-captcha');
+        const pxBlock = document.querySelector('.px-block');
+        
+        // Simulate natural scrolling
+        const scrollAmount = Math.floor(Math.random() * 100) + 50;
+        window.scrollBy({ 
+          top: scrollAmount, 
+          behavior: 'smooth' 
+        });
+        await new Promise(r => setTimeout(r, 500));
+        window.scrollBy({ 
+          top: -scrollAmount, 
+          behavior: 'smooth' 
+        });
+        
+        return pxCaptcha !== null || pxBlock !== null;
       });
 
       if (isPxChallenge) {
         console.log('PerimeterX challenge detected, waiting for resolution...');
-        // Wait longer for manual intervention or future automated solution
+        
+        // Multiple interactions with random delays
+        for (let i = 0; i < 3; i++) {
+          await this.randomDelay(1500, 3000);
+          
+          await this.page.evaluate(() => {
+            // Simulate more complex mouse behavior
+            const events = ['mousemove', 'mousedown', 'mouseup'];
+            events.forEach(eventType => {
+              const event = new MouseEvent(eventType, {
+                bubbles: true,
+                cancelable: true,
+                clientX: Math.floor(Math.random() * window.innerWidth),
+                clientY: Math.floor(Math.random() * window.innerHeight),
+                buttons: eventType === 'mousedown' ? 1 : 0
+              });
+              document.dispatchEvent(event);
+            });
+            
+            // Simulate keyboard events
+            if (Math.random() > 0.7) {
+              const keyEvent = new KeyboardEvent('keydown', {
+                key: 'Tab',
+                code: 'Tab',
+                keyCode: 9,
+                which: 9,
+                bubbles: true
+              });
+              document.dispatchEvent(keyEvent);
+            }
+          });
+        }
+        
+        await this.page.evaluate(() => {
+          // Try to trigger any pending callbacks
+          if (window._pxAppId) {
+            document.cookie = `_px${window._pxAppId}=; path=/;`;
+            // Add common PerimeterX cookies
+            document.cookie = `_pxvid=${Math.random().toString(36).substring(2)}; path=/`;
+            document.cookie = `_px3=${Math.random().toString(36).substring(2)}; path=/`;
+          }
+        });
+        
+        // Wait for challenge to clear
         await this.page.waitForFunction(
-          () => !document.querySelector('#px-captcha'),
+          () => !document.querySelector('#px-captcha') && !document.querySelector('.px-block'),
           { timeout: 30000 }
         );
       }
@@ -135,6 +280,39 @@ class WorthpointScraper {
   async randomDelay(min = 1000, max = 3000) {
     const delay = Math.floor(Math.random() * (max - min + 1) + min);
     await new Promise(resolve => setTimeout(resolve, delay));
+
+    await this.page.evaluate(() => {
+      // More natural mouse movement patterns
+      const moves = Math.floor(Math.random() * 5) + 3;
+      let lastX = 0, lastY = 0;
+      
+      for (let i = 0; i < moves; i++) {
+        // Create smoother mouse movements
+        const targetX = Math.floor(Math.random() * window.innerWidth);
+        const targetY = Math.floor(Math.random() * window.innerHeight);
+        
+        // Interpolate between points
+        const steps = Math.floor(Math.random() * 5) + 3;
+        for (let j = 0; j < steps; j++) {
+          const ratio = j / steps;
+          const x = Math.floor(lastX + (targetX - lastX) * ratio);
+          const y = Math.floor(lastY + (targetY - lastY) * ratio);
+          
+          const event = new MouseEvent('mousemove', {
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+            movementX: x - lastX,
+            movementY: y - lastY
+          });
+          document.dispatchEvent(event);
+        }
+        
+        lastX = targetX;
+        lastY = targetY;
+      }
+    });
   }
 
   async verifyLogin() {
