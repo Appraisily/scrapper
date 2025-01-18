@@ -10,35 +10,71 @@ class WorthpointScraper {
 
   async initialize() {
     console.log('Initializing browser...');
+    // Configure Chrome flags for better stealth
+    const flags = [
+      '--window-size=1920,1080',
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-infobars',
+      '--disable-notifications',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-web-security',
+      '--ignore-certificate-errors'
+    ];
+
     this.browser = await puppeteer.launch({
       headless: 'new',
-      args: [
-        '--window-size=1920,1080',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-infobars',
-        '--disable-notifications'
-      ]
+      args: flags
     });
     console.log('Browser launched successfully');
     this.page = await this.browser.newPage();
+    
+    // Override navigator.webdriver
+    await this.page.evaluateOnNewDocument(() => {
+      delete Object.getPrototypeOf(navigator).webdriver;
+      // Overwrite the languages with only English
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+      });
+    });
+
     await this.page.setViewport({ width: 1920, height: 1080 });
     await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
-    // Add additional headers
+    // Enhanced headers to look more like a real browser
     await this.page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'none',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1'
     });
 
-    console.log('New page created');
+    // Enable JavaScript and cookies
+    await this.page.setJavaScriptEnabled(true);
+    
+    console.log('Browser configuration completed');
   }
 
   async login(username, password) {
     try {
-      await this.page.goto('https://www.worthpoint.com/login');
+      // Add random delay before navigation
+      await this.randomDelay();
+      
+      await this.page.goto('https://www.worthpoint.com/login', {
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
+      
+      // Wait for any potential CAPTCHA or protection challenges
+      await this.handleProtection();
       
       // Log the current URL and HTML content
       const currentUrl = await this.page.url();
@@ -74,6 +110,31 @@ class WorthpointScraper {
       console.error('Login failed:', error);
       throw error;
     }
+  }
+
+  async handleProtection() {
+    try {
+      // Check for PerimeterX challenge
+      const isPxChallenge = await this.page.evaluate(() => {
+        return document.querySelector('#px-captcha') !== null;
+      });
+
+      if (isPxChallenge) {
+        console.log('PerimeterX challenge detected, waiting for resolution...');
+        // Wait longer for manual intervention or future automated solution
+        await this.page.waitForFunction(
+          () => !document.querySelector('#px-captcha'),
+          { timeout: 30000 }
+        );
+      }
+    } catch (error) {
+      console.log('Protection handling error:', error.message);
+    }
+  }
+
+  async randomDelay(min = 1000, max = 3000) {
+    const delay = Math.floor(Math.random() * (max - min + 1) + min);
+    await new Promise(resolve => setTimeout(resolve, delay));
   }
 
   async verifyLogin() {
