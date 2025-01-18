@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const WorthpointScraper = require('./scraper');
+const WorthpointApiScraper = require('./api-scraper');
 const { getCredentials } = require('./secrets');
 
 // Configure port from environment variable with fallback
@@ -9,14 +10,16 @@ console.log(`Starting server with port: ${port}`);
 
 const app = express();
 
-let scraper = null;
-let initializationInProgress = false;
+let browserScraper = null;
+let apiScraper = null;
+let browserInitInProgress = false;
+let apiInitInProgress = false;
 
 // Graceful shutdown handler
 async function shutdown() {
-  if (scraper) {
+  if (browserScraper) {
     console.log('Closing browser...');
-    await scraper.close();
+    await browserScraper.close();
   }
   process.exit(0);
 }
@@ -28,45 +31,85 @@ process.on('SIGINT', shutdown);
 app.use(cors());
 app.use(express.json());
 
-async function initializeScraper() {
-  if (initializationInProgress) {
-    console.log('Initialization already in progress, waiting...');
-    // Wait for existing initialization to complete
-    while (initializationInProgress) {
+async function initializeBrowserScraper() {
+  if (browserInitInProgress) {
+    while (browserInitInProgress) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return;
   }
 
-  initializationInProgress = true;
-  console.log('Starting scraper initialization...');
-  scraper = new WorthpointScraper();
-  await scraper.initialize();
+  browserInitInProgress = true;
+  console.log('Starting browser scraper initialization...');
+  browserScraper = new WorthpointScraper();
+  await browserScraper.initialize();
   const credentials = await getCredentials();
-  await scraper.login(credentials.username, credentials.password);
-  console.log('Scraper initialized and logged in');
+  await browserScraper.login(credentials.username, credentials.password);
+  console.log('Browser scraper initialized and logged in');
+  browserInitInProgress = false;
 }
 
-// API endpoint to get art data
-app.get('/api/art', async (req, res) => {
+async function initializeApiScraper() {
+  if (apiInitInProgress) {
+    while (apiInitInProgress) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return;
+  }
+
+  apiInitInProgress = true;
+  console.log('Initializing API scraper...');
+  apiScraper = new WorthpointApiScraper();
+  const credentials = await getCredentials();
+  await apiScraper.login(credentials.username, credentials.password);
+  console.log('API scraper initialized and logged in');
+  apiInitInProgress = false;
+}
+
+// API endpoint using browser scraping
+app.get('/api/art/browser', async (req, res) => {
   try {
-    if (!scraper) {
-      console.log('Scraper not initialized, initializing now...');
-      await initializeScraper();
+    if (!browserScraper) {
+      console.log('Browser scraper not initialized, initializing now...');
+      await initializeBrowserScraper();
     }
 
-    console.log('Fetching art data...');
+    console.log('Fetching art data using browser scraping...');
     const searchUrl = 'https://www.worthpoint.com/inventory/search?searchForm=search&ignoreSavedPreferences=true&max=100&sort=SaleDate&_img=false&img=true&_noGreyList=false&noGreyList=true&categories=fine-art&rMin=200&saleDate=ALL_TIME';
-    const searchResults = await scraper.scrapeSearchResults(searchUrl);
+    const searchResults = await browserScraper.scrapeSearchResults(searchUrl);
     
-    console.log(`Successfully fetched ${searchResults.length} results`);
+    console.log(`Successfully fetched ${searchResults.length} results using browser scraping`);
     res.json({
       total: searchResults.length,
-      data: searchResults
+      data: searchResults,
+      method: 'browser'
     });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Failed to fetch art data' });
+    console.error('Browser scraping error:', error);
+    res.status(500).json({ error: 'Failed to fetch art data using browser scraping' });
+  }
+});
+
+// API endpoint using direct API calls
+app.get('/api/art/api', async (req, res) => {
+  try {
+    if (!apiScraper) {
+      console.log('API scraper not initialized, initializing now...');
+      await initializeApiScraper();
+    }
+
+    console.log('Fetching art data using API...');
+    const searchResults = await apiScraper.searchItems();
+    
+    console.log(`Successfully fetched ${searchResults.length} results using API`);
+    res.json({
+      total: searchResults.length,
+      data: searchResults,
+      method: 'api'
+    });
+  } catch (error) {
+    console.error('API scraping error:', error);
+    res.status(500).json({ error: 'Failed to fetch art data using API' });
   }
 });
 
