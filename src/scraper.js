@@ -18,6 +18,13 @@ class WorthpointScraper {
     try {
       await this.page.goto('https://www.worthpoint.com/login');
       
+      // Log the current URL and HTML content
+      const currentUrl = await this.page.url();
+      console.log('Current URL:', currentUrl);
+      
+      const pageContent = await this.page.content();
+      console.log('Page HTML:', pageContent);
+      
       console.log('Waiting for login form...');
       
       // Wait for login form and fill credentials
@@ -50,10 +57,15 @@ class WorthpointScraper {
   async verifyLogin() {
     try {
       // Wait for an element that only appears when logged in
+      const currentUrl = await this.page.url();
+      console.log('Verification URL:', currentUrl);
+      
+      const pageContent = await this.page.content();
+      console.log('Verification Page HTML:', pageContent);
+      
       await this.page.waitForSelector('.user-menu', { timeout: 5000 });
       
       // Also verify we're not still on the login page
-      const currentUrl = this.page.url();
       if (currentUrl.includes('/login')) {
         return false;
       }
