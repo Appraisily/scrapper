@@ -7,11 +7,19 @@ class WorthpointScraper {
   }
 
   async initialize() {
+    console.log('Initializing browser...');
     this.browser = await puppeteer.launch({
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu'
+      ]
     });
+    console.log('Browser launched successfully');
     this.page = await this.browser.newPage();
+    console.log('New page created');
   }
 
   async login(username, password) {

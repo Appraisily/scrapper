@@ -3,8 +3,11 @@ const cors = require('cors');
 const WorthpointScraper = require('./scraper');
 const { getCredentials } = require('./secrets');
 
+// Configure port from environment variable with fallback
+const port = process.env.PORT || 3000;
+console.log(`Starting server with port: ${port}`);
+
 const app = express();
-const port = 3000;
 
 let scraper = null;
 let initializationInProgress = false;
@@ -27,6 +30,7 @@ app.use(express.json());
 
 async function initializeScraper() {
   if (initializationInProgress) {
+    console.log('Initialization already in progress, waiting...');
     // Wait for existing initialization to complete
     while (initializationInProgress) {
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -35,6 +39,7 @@ async function initializeScraper() {
   }
 
   initializationInProgress = true;
+  console.log('Starting scraper initialization...');
   scraper = new WorthpointScraper();
   await scraper.initialize();
   const credentials = await getCredentials();
@@ -46,12 +51,15 @@ async function initializeScraper() {
 app.get('/api/art', async (req, res) => {
   try {
     if (!scraper) {
+      console.log('Scraper not initialized, initializing now...');
       await initializeScraper();
     }
 
+    console.log('Fetching art data...');
     const searchUrl = 'https://www.worthpoint.com/inventory/search?searchForm=search&ignoreSavedPreferences=true&max=100&sort=SaleDate&_img=false&img=true&_noGreyList=false&noGreyList=true&categories=fine-art&rMin=200&saleDate=ALL_TIME';
     const searchResults = await scraper.scrapeSearchResults(searchUrl);
     
+    console.log(`Successfully fetched ${searchResults.length} results`);
     res.json({
       total: searchResults.length,
       data: searchResults
@@ -64,5 +72,7 @@ app.get('/api/art', async (req, res) => {
 
 // Start the server
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server is now listening on port ${port}`);
+  console.log('Environment:', process.env.NODE_ENV);
+  console.log('Google Cloud Project:', process.env.GOOGLE_CLOUD_PROJECT);
 });
