@@ -226,6 +226,8 @@ class WorthpointScraper {
   async login(username, password) {
     try {
       await this.randomDelay();
+
+      console.log('Navigating to login page...');
       
       // Set initial cookies from HAR
       await this.page.setCookie(
@@ -239,6 +241,13 @@ class WorthpointScraper {
         waitUntil: ['domcontentloaded', 'networkidle0'],
         timeout: 30000
       });
+      
+      // Log the current URL and HTML content
+      const currentUrl = await this.page.url();
+      const pageContent = await this.page.content();
+      console.log('Current URL:', currentUrl);
+      console.log('Page Title:', await this.page.title());
+      console.log('Page HTML:', pageContent);
       
       await this.handleProtection();
       
@@ -273,6 +282,14 @@ class WorthpointScraper {
       return true;
     } catch (error) {
       console.error('Login failed:', error);
+      
+      // Log additional debug information on failure
+      try {
+        console.log('Failed page URL:', await this.page.url());
+        console.log('Failed page HTML:', await this.page.content());
+      } catch (debugError) {
+        console.error('Error getting debug information:', debugError);
+      }
       throw error;
     }
   }
