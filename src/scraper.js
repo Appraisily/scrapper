@@ -37,6 +37,74 @@ class WorthpointScraper {
     await this.page.evaluateOnNewDocument(() => {
       delete Object.getPrototypeOf(navigator).webdriver;
       
+      // Add hardware concurrency and memory info
+      Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => 8
+      });
+      Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => 8
+      });
+      
+      // Add canvas fingerprint
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function(contextType, contextAttributes) {
+        const context = getContext.apply(this, arguments);
+        if (contextType === '2d') {
+          const oldGetImageData = context.getImageData;
+          context.getImageData = function() {
+            const imageData = oldGetImageData.apply(this, arguments);
+            return imageData;
+          };
+        }
+        return context;
+      };
+
+      // Add audio context
+      const audioContext = window.AudioContext || window.webkitAudioContext;
+      if (audioContext) {
+        const origCreateOscillator = audioContext.prototype.createOscillator;
+        audioContext.prototype.createOscillator = function() {
+          const oscillator = origCreateOscillator.apply(this, arguments);
+          oscillator.frequency.value = 440; // Standard A note
+          return oscillator;
+        };
+      }
+      
+      // Add more sophisticated browser features
+      Object.defineProperty(navigator, 'connection', {
+        get: () => ({
+          effectiveType: '4g',
+          rtt: 50,
+          downlink: 10,
+          saveData: false
+        })
+      });
+      
+      // Add battery API
+      navigator.getBattery = () => 
+        Promise.resolve({
+          charging: true,
+          chargingTime: 0,
+          dischargingTime: Infinity,
+          level: 0.93
+        });
+
+      // Add performance timing
+      if (!window.performance) {
+        window.performance = {
+          memory: {
+            jsHeapSizeLimit: 2172649472,
+            totalJSHeapSize: 2172649472,
+            usedJSHeapSize: 2172649472
+          },
+          timeOrigin: Date.now(),
+          timing: {
+            navigationStart: Date.now(),
+            loadEventEnd: Date.now() + 500
+          }
+        };
+      }
+      
       // Add more sophisticated browser APIs
       window.Notification = class Notification {
         static permission = 'default';
@@ -134,7 +202,7 @@ class WorthpointScraper {
     await this.page.setExtraHTTPHeaders({
       'Accept-Language': 'en-US,en;q=0.9',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-      'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+      'sec-ch-ua': '"Not_A_Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
       'sec-ch-ua-mobile': '?0',
       'sec-ch-ua-platform': '"Windows"',
       'sec-fetch-dest': 'document',
@@ -201,6 +269,11 @@ class WorthpointScraper {
 
   async handleProtection() {
     try {
+      // Add random viewport resizing
+      const width = 1920 + Math.floor(Math.random() * 100);
+      const height = 1080 + Math.floor(Math.random() * 100);
+      await this.page.setViewport({ width, height });
+
       // Check for PerimeterX challenge
       const isPxChallenge = await this.page.evaluate(async () => {
         const pxCaptcha = document.querySelector('#px-captcha');
@@ -218,6 +291,29 @@ class WorthpointScraper {
           behavior: 'smooth' 
         });
         
+        // Add touch events simulation
+        if (Math.random() > 0.7) {
+          const touch = new Touch({
+            identifier: Date.now(),
+            target: document.body,
+            clientX: Math.random() * window.innerWidth,
+            clientY: Math.random() * window.innerHeight,
+            radiusX: 2.5,
+            radiusY: 2.5,
+            rotationAngle: 10,
+            force: 0.5
+          });
+          
+          const touchEvent = new TouchEvent('touchstart', {
+            cancelable: true,
+            bubbles: true,
+            touches: [touch],
+            targetTouches: [touch],
+            changedTouches: [touch]
+          });
+          document.body.dispatchEvent(touchEvent);
+        }
+
         return pxCaptcha !== null || pxBlock !== null;
       });
 
@@ -280,6 +376,16 @@ class WorthpointScraper {
   async randomDelay(min = 1000, max = 3000) {
     const delay = Math.floor(Math.random() * (max - min + 1) + min);
     await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Add random network throttling
+    const client = await this.page.target().createCDPSession();
+    await client.send('Network.enable');
+    await client.send('Network.emulateNetworkConditions', {
+      offline: false,
+      latency: Math.floor(Math.random() * 30) + 20,
+      downloadThroughput: (5 + Math.random() * 10) * 1024 * 1024 / 8,
+      uploadThroughput: (3 + Math.random() * 5) * 1024 * 1024 / 8
+    });
 
     await this.page.evaluate(() => {
       // More natural mouse movement patterns
