@@ -4,7 +4,6 @@ class WorthpointApiScraper {
   constructor() {
     this.axios = axios.create({
       baseURL: 'https://www.worthpoint.com',
-      withCredentials: true,
       headers: {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -38,9 +37,10 @@ class WorthpointApiScraper {
       this.cookies = initialCookies;
 
       // Perform login
-      const loginResponse = await this.axios.post('/api/v1/auth/login', {
+      const loginResponse = await this.axios.post('/login', {
         email: username,
         password: password,
+        rememberMe: true
       }, {
         headers: {
           'Content-Type': 'application/json',
@@ -58,13 +58,34 @@ class WorthpointApiScraper {
       throw new Error('Login failed');
     } catch (error) {
       console.error('Login error:', error.message, error.response?.data);
+      return false;
+    }
+  }
+
+  async getCSRFToken() {
+    try {
+      const response = await this.axios.get('/app/login/auth');
+      const html = response.data;
+      
+      // Extract CSRF token from the HTML
+      const match = html.match(/<input[^>]*name="_csrf"[^>]*value="([^"]*)"[^>]*>/);
+      if (match && match[1]) {
+        return match[1];
+      }
+      
+      throw new Error('CSRF token not found');
+    } catch (error) {
+      console.error('Error getting CSRF token:', error.message);
       throw error;
     }
   }
 
-
   async searchItems(params = {}) {
     try {
+      if (!this.cookies) {
+        throw new Error('Not logged in');
+      }
+
       const defaultParams = {
         searchForm: 'search',
         ignoreSavedPreferences: true,
@@ -78,10 +99,9 @@ class WorthpointApiScraper {
       };
 
       const searchParams = { ...defaultParams, ...params };
-      
-      const response = await this.axios.get('/api/v1/inventory/search', {
+      const response = await this.axios.get('/inventory/search', {
         params: searchParams,
-        headers: {
+        headers: { 
           'Cookie': this.cookies.join('; '),
           'X-Requested-With': 'XMLHttpRequest'
         }
@@ -96,7 +116,7 @@ class WorthpointApiScraper {
 
   async getPriceDistribution(params = {}) {
     try {
-      const response = await this.axios.get('/api/v1/inventory/price/distribution', {
+      const response = await this.axios.get('/inventory/price/distribution', {
         params: {
           'f.category': params.category || '9',
           'f.query': params.query || '',
@@ -104,7 +124,8 @@ class WorthpointApiScraper {
           'f.saleDate': params.saleDate || 'ALL_TIME',
           'f.img': params.img || true
         },
-        headers: {
+        headers: { 
+          'X-Requested-With': 'XMLHttpRequest',
           'Cookie': this.cookies.join('; ')
         }
       });
@@ -135,7 +156,7 @@ class WorthpointApiScraper {
 
   async getItemDetails(itemId) {
     try {
-      const response = await this.axios.get(`/api/v1/inventory/item/${itemId}`, {
+      const response = await this.axios.get(`/inventory/item/${itemId}`, {
         headers: {
           'Cookie': this.cookies.join('; ')
         }

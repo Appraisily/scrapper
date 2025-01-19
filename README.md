@@ -1,32 +1,52 @@
-# Worthpoint Art Scraper
+# Art Market Data Scraper
 
-A Node.js web scraper for extracting fine art sales data from Worthpoint.com using Puppeteer.
+A comprehensive Node.js web scraper for extracting fine art sales data from multiple sources including Worthpoint, Christie's, and Invaluable. Built with Puppeteer and Express.
 
 ## Features
 
-- Automated login to Worthpoint.com
-- Scrapes fine art sales data including:
-  - Title
-  - Sale price
-  - Sale date
-  - Source (e.g., eBay)
-  - Image URL
-- Configurable search parameters
-- Headless browser automation
-- Error handling and retry logic
+### Multi-Source Data Collection
+- **Worthpoint.com**
+  - Browser-based scraping
+  - Direct API integration
+  - Historical sales data
+  - Price trends
+  
+- **Christie's**
+  - Auction results
+  - Lot details
+  - Sale totals
+  - Upcoming auctions
+  
+- **Invaluable**
+  - Real-time auction data
+  - Price estimates
+  - Auction house information
+  - Lot details
+
+### Technical Features
+- Headless browser automation with Puppeteer
+- Anti-detection measures
+- Automatic login handling
+- Rate limiting and retry logic
+- Error handling and logging
+- REST API endpoints
+- CORS support
+- Docker containerization
+- Cloud Run deployment
 
 ## Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js (v18 or higher)
 - npm
-- A Worthpoint.com account
+- Docker (for containerized deployment)
+- Google Cloud SDK (for deployment)
 
 ## Installation
 
 1. Clone the repository:
 ```bash
 git clone [repository-url]
-cd worthpoint-scraper
+cd art-market-scraper
 ```
 
 2. Install dependencies:
@@ -34,60 +54,139 @@ cd worthpoint-scraper
 npm install
 ```
 
-3. Create a `.env` file in the root directory with your Worthpoint credentials:
+3. Create a `.env` file in the root directory with your credentials:
 ```
 WORTHPOINT_USERNAME=your_username
 WORTHPOINT_PASSWORD=your_password
+PORT=3000
+NODE_ENV=development
+GOOGLE_CLOUD_PROJECT=your-project-id
 ```
 
-## Usage
+## API Endpoints
 
-Run the scraper:
+### Worthpoint Browser Scraping
+```
+GET /api/art/browser
+```
+Returns fine art sales data scraped using browser automation.
+
+### Worthpoint API
+```
+GET /api/art/api
+```
+Returns fine art sales data fetched directly from Worthpoint's API.
+
+### Christie's Auctions
+```
+GET /api/christies
+```
+Query Parameters:
+- `month` (optional): Filter by month (1-12)
+- `year` (optional): Filter by year
+- `page` (optional): Page number (default: 1)
+- `pageSize` (optional): Results per page (default: 60)
+
+### Christie's Lot Details
+```
+GET /api/christies/lot/:lotId
+```
+Returns detailed information about a specific auction lot.
+
+### Invaluable Search
+```
+GET /api/invaluable
+```
+Query Parameters:
+- `currency` (optional): Currency code (default: USD)
+- `minPrice` (optional): Minimum price (default: 250)
+- `upcoming` (optional): Include upcoming auctions (default: false)
+- `query` (optional): Search query
+- `keyword` (optional): Additional keywords
+
+## Development
+
+Start the development server:
 ```bash
-npm start
+npm run dev
 ```
 
-The scraper will:
-1. Log in to Worthpoint using provided credentials
-2. Navigate to the fine art search results
-3. Extract data from the search results
-4. Output the data to the console
+The server will start on port 3000 (or the port specified in your .env file).
+
+## Docker Deployment
+
+Build the Docker image:
+```bash
+docker build -t art-market-scraper .
+```
+
+Run the container:
+```bash
+docker run -p 3000:3000 --env-file .env art-market-scraper
+```
+
+## Google Cloud Run Deployment
+
+Deploy to Cloud Run:
+```bash
+gcloud builds submit --config cloudbuild.yaml
+```
 
 ## Project Structure
 
 ```
 ├── src/
-│   ├── index.js        # Main application entry point
-│   └── scraper.js      # Scraper class implementation
-├── .env                # Environment variables
-├── package.json        # Project dependencies and scripts
-└── README.md          # Project documentation
+│   ├── server.js           # Express server and API routes
+│   ├── scraper.js          # Worthpoint browser scraper
+│   ├── api-scraper.js      # Worthpoint API integration
+│   ├── christies-scraper.js# Christie's scraper
+│   ├── invaluable-scraper.js# Invaluable scraper
+│   └── secrets.js          # Secrets management
+├── Dockerfile              # Docker configuration
+├── cloudbuild.yaml         # Cloud Build configuration
+├── package.json            # Project dependencies
+└── README.md              # Documentation
 ```
-
-## Configuration
-
-The search URL can be modified in `src/index.js` to change:
-- Maximum results (`max=100`)
-- Sort order (`sort=SaleDate`)
-- Category (`categories=fine-art`)
-- Minimum price (`rMin=200`)
-- Date range (`saleDate=ALL_TIME`)
-
-## Dependencies
-
-- `puppeteer`: Web scraping and browser automation
-- `dotenv`: Environment variable management
 
 ## Security Notes
 
-- Never commit your `.env` file
-- Store credentials securely
-- Use environment variables for sensitive data
+- Credentials are managed through Google Cloud Secret Manager
+- All requests use HTTPS
+- Rate limiting is implemented to prevent abuse
+- Anti-bot detection measures are in place
+- Sensitive data is not logged
+
+## Error Handling
+
+The API implements comprehensive error handling:
+- Network errors
+- Authentication failures
+- Rate limiting
+- Invalid parameters
+- Scraping failures
+
+## Current Status
+
+The project is actively maintained and includes:
+- ✅ Worthpoint integration (both browser and API)
+- ✅ Christie's auction data scraping
+- ✅ Invaluable integration
+- ✅ Containerized deployment
+- ✅ Cloud Run hosting
+- ✅ Automated builds
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
 [Add your license here]
 
-## Contributing
+## Support
 
-[Add contribution guidelines if applicable]
+For support, please [create an issue](repository-issues-url) or contact the maintainers.

@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const WorthpointScraper = require('./scraper');
 const WorthpointApiScraper = require('./api-scraper');
+const ChristiesScraper = require('./christies-scraper');
+const InvaluableScraper = require('./invaluable-scraper');
 const { getCredentials } = require('./secrets');
 
 // Configure port from environment variable with fallback
@@ -12,6 +14,8 @@ const app = express();
 
 let browserScraper = null;
 let apiScraper = null;
+let christiesScraper = null;
+let invaluableScraper = null;
 let browserInitInProgress = false;
 let apiInitInProgress = false;
 
@@ -110,6 +114,86 @@ app.get('/api/art/api', async (req, res) => {
   } catch (error) {
     console.error('API scraping error:', error);
     res.status(500).json({ error: 'Failed to fetch art data using API' });
+  }
+});
+
+// Christie's API endpoint
+app.get('/api/christies', async (req, res) => {
+  try {
+    if (!christiesScraper) {
+      console.log('Initializing Christie\'s scraper...');
+      christiesScraper = new ChristiesScraper();
+    }
+
+    const { month, year, page, pageSize } = req.query;
+    console.log('Fetching Christie\'s auction data...');
+    
+    const searchResults = await christiesScraper.searchAuctions({
+      month: parseInt(month) || undefined,
+      year: parseInt(year) || undefined,
+      page: parseInt(page) || 1,
+      pageSize: parseInt(pageSize) || 60
+    });
+    
+    console.log(`Successfully fetched ${searchResults.length} results from Christie's`);
+    res.json({
+      total: searchResults.length,
+      data: searchResults,
+      source: 'christies'
+    });
+  } catch (error) {
+    console.error('Christie\'s scraping error:', error);
+    res.status(500).json({ error: 'Failed to fetch Christie\'s auction data' });
+  }
+});
+
+// Christie's lot details endpoint
+app.get('/api/christies/lot/:lotId', async (req, res) => {
+  try {
+    if (!christiesScraper) {
+      console.log('Initializing Christie\'s scraper...');
+      christiesScraper = new ChristiesScraper();
+    }
+
+    const { lotId } = req.params;
+    console.log(`Fetching Christie's lot details for ID: ${lotId}`);
+    
+    const lotDetails = await christiesScraper.getLotDetails(lotId);
+    res.json(lotDetails);
+  } catch (error) {
+    console.error('Christie\'s lot details error:', error);
+    res.status(500).json({ error: 'Failed to fetch Christie\'s lot details' });
+  }
+});
+
+// Invaluable API endpoint
+app.get('/api/invaluable', async (req, res) => {
+  try {
+    if (!invaluableScraper) {
+      console.log('Initializing Invaluable scraper...');
+      invaluableScraper = new InvaluableScraper();
+    }
+
+    const { currency, minPrice, upcoming, query, keyword } = req.query;
+    console.log('Fetching Invaluable auction data...');
+    
+    const searchResults = await invaluableScraper.searchItems({
+      currency,
+      minPrice,
+      upcoming: upcoming === 'true',
+      query,
+      keyword
+    });
+    
+    console.log(`Successfully fetched ${searchResults.length} results from Invaluable`);
+    res.json({
+      total: searchResults.length,
+      data: searchResults,
+      source: 'invaluable'
+    });
+  } catch (error) {
+    console.error('Invaluable scraping error:', error);
+    res.status(500).json({ error: 'Failed to fetch Invaluable auction data' });
   }
 });
 
