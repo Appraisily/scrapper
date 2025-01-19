@@ -4,6 +4,7 @@ class WorthpointApiScraper {
   constructor() {
     this.axios = axios.create({
       baseURL: 'https://www.worthpoint.com',
+      withCredentials: true,
       headers: {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -27,30 +28,26 @@ class WorthpointApiScraper {
 
   async login(username, password) {
     try {
-      // Set initial cookies
-      const initialCookies = [
-        'cky-consent=yes',
-        'cky-action=yes',
-        '_gid=GA1.2.' + Math.floor(Math.random()*1000000000),
-        '_ga=GA1.1.' + Math.floor(Math.random()*1000000000)
-      ];
-      this.cookies = initialCookies;
+      // Get the login page first to get any necessary tokens/cookies
+      const loginPageResponse = await this.axios.get('/app/login/auth');
+      this.cookies = loginPageResponse.headers['set-cookie'] || [];
 
       // Perform login
-      const loginResponse = await this.axios.post('/login', {
-        email: username,
-        password: password,
-        rememberMe: true
+      const loginResponse = await this.axios.post('/app/login/auth', {
+        j_username: username,
+        j_password: password,
+        _spring_security_remember_me: true
       }, {
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
           'Cookie': this.cookies.join('; '),
-          'X-Requested-With': 'XMLHttpRequest'
+          'Origin': 'https://www.worthpoint.com',
+          'Referer': 'https://www.worthpoint.com/app/login/auth'
         }
       });
 
-      if (loginResponse.data.success) {
-        // Update cookies with session token
+      // Check if login was successful by looking for redirect
+      if (loginResponse.status === 302 || loginResponse.headers.location) {
         this.cookies = loginResponse.headers['set-cookie'] || this.cookies;
         return true;
       }
@@ -58,7 +55,10 @@ class WorthpointApiScraper {
       throw new Error('Login failed');
     } catch (error) {
       console.error('Login error:', error.message, error.response?.data);
-      return false;
+      if (error.response?.status === 403) {
+        console.error('Login forbidden - possible CSRF or security issue');
+      }
+      throw error;
     }
   }
 
@@ -99,7 +99,7 @@ class WorthpointApiScraper {
       };
 
       const searchParams = { ...defaultParams, ...params };
-      const response = await this.axios.get('/inventory/search', {
+      const response = await this.axios.get('/api/v1/inventory/search', {
         params: searchParams,
         headers: { 
           'Cookie': this.cookies.join('; '),
@@ -116,7 +116,7 @@ class WorthpointApiScraper {
 
   async getPriceDistribution(params = {}) {
     try {
-      const response = await this.axios.get('/inventory/price/distribution', {
+      const response = await this.axios.get('/api/v1/inventory/price/distribution', {
         params: {
           'f.category': params.category || '9',
           'f.query': params.query || '',
@@ -156,7 +156,7 @@ class WorthpointApiScraper {
 
   async getItemDetails(itemId) {
     try {
-      const response = await this.axios.get(`/inventory/item/${itemId}`, {
+      const response = await this.axios.get(`/api/v1/inventory/item/${itemId}`, {
         headers: {
           'Cookie': this.cookies.join('; ')
         }

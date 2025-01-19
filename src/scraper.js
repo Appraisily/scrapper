@@ -226,7 +226,6 @@ class WorthpointScraper {
   async login(username, password) {
     try {
       await this.randomDelay();
-
       console.log('Navigating to login page...');
       
       // Set initial cookies from HAR
@@ -237,7 +236,7 @@ class WorthpointScraper {
         { name: '_ga', value: 'GA1.1.'+Math.floor(Math.random()*1000000000), domain: '.worthpoint.com' }
       );
 
-      await this.page.goto('https://www.worthpoint.com/login', {
+      await this.page.goto('https://www.worthpoint.com/app/login/auth', {
         waitUntil: ['domcontentloaded', 'networkidle0'],
         timeout: 30000
       });
@@ -253,18 +252,18 @@ class WorthpointScraper {
       
       console.log('Waiting for login form...');
       
-      await this.page.waitForSelector('input[name="email"]', { visible: true });
+      await this.page.waitForSelector('input[name="j_username"]', { visible: true });
       await this.randomDelay(500, 1000);
-      await this.page.type('input[name="email"]', username);
+      await this.page.type('input[name="j_username"]', username);
       
       await this.randomDelay(300, 800);
       
-      await this.page.waitForSelector('input[name="password"]', { visible: true });
-      await this.page.type('input[name="password"]', password);
+      await this.page.waitForSelector('input[name="j_password"]', { visible: true });
+      await this.page.type('input[name="j_password"]', password);
       
       await this.randomDelay(500, 1200);
       
-      const submitButton = await this.page.waitForSelector('button[type="submit"]', { visible: true });
+      const submitButton = await this.page.waitForSelector('#loginBtn', { visible: true });
       await Promise.all([
         this.page.waitForNavigation(),
         submitButton.click()
@@ -457,13 +456,10 @@ class WorthpointScraper {
       const currentUrl = await this.page.url();
       console.log('Verification URL:', currentUrl);
       
-      const pageContent = await this.page.content();
-      console.log('Verification Page HTML:', pageContent);
-      
       await this.page.waitForSelector('.user-menu', { timeout: 5000 });
       
       // Also verify we're not still on the login page
-      if (currentUrl.includes('/login')) {
+      if (currentUrl.includes('/app/login/auth')) {
         return false;
       }
       

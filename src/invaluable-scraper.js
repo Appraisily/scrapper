@@ -41,33 +41,96 @@ class InvaluableScraper {
   async login(email, password) {
     try {
       if (this.isLoggedIn) {
+        console.log('Already logged in, skipping login');
         return true;
       }
 
       console.log('Navigating to Invaluable login page...');
-      await this.page.goto('https://www.invaluable.com/login', { waitUntil: 'networkidle0' });
+      await this.page.goto('https://www.invaluable.com/login', { 
+        waitUntil: 'networkidle0',
+        timeout: 60000 
+      });
       
-      // Wait for login form
-      await this.page.waitForSelector('#emailLoginPage');
+      // Wait for login form with increased timeout
+      console.log('Waiting for login form...');
+      await this.page.waitForSelector('input[type="email"], #emailLoginPage, input[name="email"]', { 
+        timeout: 30000,
+        visible: true 
+      });
+      console.log('Login form found');
       
       // Type credentials
-      await this.page.type('#emailLoginPage', email);
-      await this.page.type('#passwordLogin', password);
+      const emailSelector = await this.page.evaluate(() => {
+        const selectors = ['#emailLoginPage', 'input[type="email"]', 'input[name="email"]'];
+        for (const selector of selectors) {
+          if (document.querySelector(selector)) {
+            return selector;
+          }
+        }
+        return null;
+      });
+
+      const passwordSelector = await this.page.evaluate(() => {
+        const selectors = ['#passwordLogin', 'input[type="password"]', 'input[name="password"]'];
+        for (const selector of selectors) {
+          if (document.querySelector(selector)) {
+            return selector;
+          }
+        }
+        return null;
+      });
+
+      if (!emailSelector || !passwordSelector) {
+        throw new Error('Login form elements not found');
+      }
+
+      console.log('Entering credentials...');
+      await this.page.type(emailSelector, email);
+      await this.page.type(passwordSelector, password);
       
-      // Submit form
-      const submitButton = await this.page.$('button[type="submit"]');
+      // Look for submit button with multiple possible selectors
+      const submitButton = await this.page.evaluate(() => {
+        const selectors = [
+          'button[type="submit"]',
+          'input[type="submit"]',
+          'button.login-button',
+          'button:contains("Sign In")',
+          'button:contains("Log In")',
+          'input[value="Sign In"]',
+          'input[value="Log In"]'
+        ];
+        
+        for (const selector of selectors) {
+          const button = document.querySelector(selector);
+          if (button) {
+            return selector;
+          }
+        }
+        return null;
+      });
+
       if (!submitButton) {
+        console.error('Available elements on page:', await this.page.evaluate(() => {
+          return {
+            buttons: Array.from(document.querySelectorAll('button')).map(b => ({
+              type: b.type,
+              text: b.textContent.trim(),
+              class: b.className
+            })),
+            forms: Array.from(document.querySelectorAll('form')).length
+          };
+        }));
         throw new Error('Login submit button not found');
       }
       
-      // Click submit and wait for navigation
+      console.log('Submitting login form...');
       await Promise.all([
         this.page.waitForNavigation({ waitUntil: 'networkidle0' }),
-        submitButton.click()
+        this.page.click(submitButton)
       ]);
       
       // Verify login success
-      const loginError = await this.page.$('#loginError:not([hidden])');
+      const loginError = await this.page.$('.error-message, #loginError:not([hidden]), .alert-danger');
       if (loginError) {
         const errorText = await this.page.evaluate(el => el.textContent, loginError);
         throw new Error(`Login failed: ${errorText}`);
@@ -78,7 +141,17 @@ class InvaluableScraper {
       return true;
 
     } catch (error) {
-      console.error('Invaluable login error:', error);
+      console.error('Invaluable login error:', error.message);
+      console.error('Current URL:', await this.page.url());
+      
+      // Take screenshot for debugging
+      try {
+        await this.page.screenshot({ path: '/tmp/invaluable-login-error.png' });
+        console.log('Error screenshot saved to /tmp/invaluable-login-error.png');
+      } catch (screenshotError) {
+        console.error('Failed to save error screenshot:', screenshotError.message);
+      }
+      
       throw error;
     }
   }
