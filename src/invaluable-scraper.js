@@ -152,7 +152,7 @@ class InvaluableScraper {
       
       // Login before searching
       if (!this.isLoggedIn) {
-        await this.login('info@appraisily.com', 'Invaluable8!');
+        await this.login('ratonxi@gmail.com', 'Worthpoint8');
       }
       
       // Construct the URL with parameters
