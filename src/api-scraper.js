@@ -29,7 +29,7 @@ class WorthpointApiScraper {
 
   async login(username, password) {
     try {
-      console.log('[API Login] Step 1: Getting initial page to collect cookies...');
+      console.log('[API Login] Step 1: Checking for protection...');
       
       // Add required headers for initial request
       const headers = {
@@ -37,7 +37,12 @@ class WorthpointApiScraper {
         'Accept-Language': 'en-US,en;q=0.9',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        'DNT': '1',
+        'Connection': 'keep-alive',
         'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'none',
@@ -46,7 +51,7 @@ class WorthpointApiScraper {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       };
 
-      const loginPageResponse = await this.axios.get('/app/login/auth', {
+      const loginPageResponse = await this.axios.get('https://www.worthpoint.com/app/login/auth', {
         maxRedirects: 5,
         validateStatus: status => status < 500,
         headers

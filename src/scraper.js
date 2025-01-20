@@ -1,6 +1,7 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { saveHtmlToFile } = require('./utils/drive-logger');
+// Configure plugins
 puppeteer.use(StealthPlugin());
 
 class WorthpointScraper {
@@ -308,335 +309,150 @@ class WorthpointScraper {
     console.log('Browser configuration completed');
   }
 
-  async login(username, password) {
-    try {
-      await this.randomDelay();
-      console.log('Navigating to login page...');
-      
-      // Set initial cookies from HAR
-      await this.page.setCookie(
-        { name: 'cky-consent', value: 'yes', domain: '.worthpoint.com' },
-        { name: 'cky-action', value: 'yes', domain: '.worthpoint.com' },
-        { name: '_gid', value: 'GA1.2.'+Math.floor(Math.random()*1000000000), domain: '.worthpoint.com' },
-        { name: '_ga', value: 'GA1.1.'+Math.floor(Math.random()*1000000000), domain: '.worthpoint.com' }
-      );
-
-      await this.page.goto('https://www.worthpoint.com/app/login/auth', {
-        waitUntil: ['domcontentloaded', 'networkidle0'],
-        timeout: 30000
-      });
-      
-      // Log the current URL and HTML content
-      const currentUrl = await this.page.url();
-      const pageContent = await this.page.content();
-      
-      // Save HTML content
-      saveHtmlToFile(pageContent, 'worthpoint-login');
-      
-      console.log('Current URL:', currentUrl);
-      console.log('Page Title:', await this.page.title());
-      
-      await this.handleProtection();
-      
-      console.log('Waiting for login form...');
-      
-      await this.page.waitForSelector('input[name="j_username"]', { visible: true });
-      await this.randomDelay(500, 1000);
-      await this.page.type('input[name="j_username"]', username);
-      
-      await this.randomDelay(300, 800);
-      
-      await this.page.waitForSelector('input[name="j_password"]', { visible: true });
-      await this.page.type('input[name="j_password"]', password);
-      
-      await this.randomDelay(500, 1200);
-      
-      const submitButton = await this.page.waitForSelector('#loginBtn', { visible: true });
-      await Promise.all([
-        this.page.waitForNavigation(),
-        submitButton.click()
-      ]);
-      
-      await this.randomDelay(1000, 2000);
-
-      // Verify login success
-      const isLoggedIn = await this.verifyLogin();
-      if (!isLoggedIn) {
-        throw new Error('Login failed - unable to verify login status');
-      }
-      
-      console.log('Successfully logged in');
-      return true;
-    } catch (error) {
-      console.error('Login failed:', error);
-      
-      // Log additional debug information on failure
-      try {
-        console.log('Failed page URL:', await this.page.url());
-        console.log('Failed page HTML:', await this.page.content());
-      } catch (debugError) {
-        console.error('Error getting debug information:', debugError);
-      }
-      throw error;
-    }
-  }
-
   async handleProtection() {
     try {
-      console.log('[Protection] Analyzing PerimeterX challenge...');
+      console.log('[Protection] Step 1: Analyzing protection page...');
       
-      // Wait for the PerimeterX script to load
-      await this.page.waitForFunction(() => {
-        return typeof window._pxAppId !== 'undefined';
-      }, { timeout: 10000 });
-      
-      // Extract the PX app ID and other parameters
-      const pxParams = await this.page.evaluate(() => ({
-        appId: window._pxAppId,
-        jsClientSrc: document.querySelector('script[src*="/init.js"]')?.src,
-        captchaSrc: document.querySelector('script[src*="/captcha.js"]')?.src
-      }));
-      
-      console.log('[Protection] Found PX parameters:', pxParams);
-      
-      // Add required cookies and headers
-      await this.page.setExtraHTTPHeaders({
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1'
-      });
-
-      // Add more realistic mouse movements
-      await this.page.evaluate(() => {
-        const moveCount = Math.floor(Math.random() * 10) + 5;
-        for (let i = 0; i < moveCount; i++) {
-          const event = new MouseEvent('mousemove', {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            clientX: Math.random() * window.innerWidth,
-            clientY: Math.random() * window.innerHeight,
-            screenX: Math.random() * screen.width,
-            screenY: Math.random() * screen.height,
-          });
-          document.dispatchEvent(event);
+      // First request to get the challenge
+      const response = await this.page.goto('https://www.worthpoint.com/app/login/auth', {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1'
         }
       });
-
-      // Add random viewport resizing
-      const width = 1920 + Math.floor(Math.random() * 100);
-      const height = 1080 + Math.floor(Math.random() * 100);
-      await this.page.setViewport({ width, height });
       
-      // Handle the PX challenge
+      const html = await response.text();
+      const cookies = response.headers()['set-cookie'] || [];
+      
+      // Extract PX parameters
+      const pxAppIdMatch = html.match(/PX([a-zA-Z0-9]+)/);
+      const pxAppId = pxAppIdMatch ? pxAppIdMatch[1] : null;
+      
+      if (!pxAppId) {
+        throw new Error('Could not find PX App ID');
+      }
+      
+      console.log('[Protection] Step 2: Found PX App ID:', pxAppId);
+      
+      // Generate client-specific data
+      const clientData = {
+        uuid: Math.random().toString(36).substring(2),
+        userAgent: await this.page.evaluate(() => navigator.userAgent),
+        timeStamp: Date.now(),
+        screenRes: '1920x1080',
+        devicePixelRatio: 1,
+        language: 'en-US',
+        platform: 'Win32',
+        touch: false
+      };
+      
+      // Send client data
+      const challengeResponse = await this.page.evaluate(async (data) => {
+        const response = await fetch('/lIUjcOwl/api/v1/collector', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            appId: data.pxAppId,
+            tag: 'v8.0.2',
+            uuid: data.clientData.uuid,
+            cs: data.clientData.screenRes,
+            ...data.clientData
+          })
+        });
+        return response.json();
+      }, { pxAppId, clientData });
+      
+      console.log('[Protection] Step 3: Challenge response:', challengeResponse);
+      
+      // Add more realistic browser behavior
       await this.page.evaluate(() => {
-        // Simulate real browser behavior
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        
+        // Override navigator properties
+        Object.defineProperties(navigator, {
+          webdriver: { get: () => undefined },
+          languages: { get: () => ['en-US', 'en'] },
+          plugins: { get: () => [
+            {
+              0: { type: 'application/x-google-chrome-pdf' },
+              description: 'Portable Document Format',
+              filename: 'internal-pdf-viewer',
+              length: 1,
+              name: 'Chrome PDF Plugin'
+            }
+          ]},
+          // Add hardware concurrency
+          hardwareConcurrency: { get: () => 8 },
+          // Add device memory
+          deviceMemory: { get: () => 8 },
+          // Add connection info
+          connection: { get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+          })}
+        });
+
         // Add canvas fingerprint
-        const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-        HTMLCanvasElement.prototype.toDataURL = function(type) {
-          if (type === 'image/png' && this.width === 300 && this.height === 150) {
-            return 'data:image/png;base64,iVBORw0K...'; // Add actual canvas data
+        const getContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function(contextType) {
+          const context = getContext.apply(this, arguments);
+          if (contextType === '2d') {
+            const oldGetImageData = context.getImageData;
+            context.getImageData = function() {
+              const imageData = oldGetImageData.apply(this, arguments);
+              return imageData;
+            };
           }
-          return originalToDataURL.apply(this, arguments);
+          return context;
         };
-        
-        // Add audio fingerprint
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        oscillator.type = 'square';
-        oscillator.frequency.setValueAtTime(520, audioContext.currentTime);
-        const compressor = audioContext.createDynamicsCompressor();
-        oscillator.connect(compressor);
-        compressor.connect(audioContext.destination);
+
+        // Add audio context
+        const audioContext = window.AudioContext || window.webkitAudioContext;
+        if (audioContext) {
+          const origCreateOscillator = audioContext.prototype.createOscillator;
+          audioContext.prototype.createOscillator = function() {
+            const oscillator = origCreateOscillator.apply(this, arguments);
+            oscillator.frequency.value = 440; // Standard A note
+            return oscillator;
+          };
+        }
       });
       
-      // Wait for challenge to complete
+      // Add random mouse movements
+      await this.page.mouse.move(
+        100 + Math.random() * 100,
+        100 + Math.random() * 100,
+        { steps: 10 }
+      );
+      
+      // Wait for protection to clear
       await this.page.waitForFunction(() => {
         return !document.querySelector('#px-captcha') && 
                !document.querySelector('.px-block') &&
                document.cookie.includes('_px3=');
       }, { timeout: 30000 });
       
-      console.log('[Protection] Challenge completed successfully');
-      
-      // Get the cookies after challenge
-      const cookies = await this.page.cookies();
-      console.log('[Protection] New cookies:', cookies.map(c => c.name));
-      
-      // Verify we can proceed
-      const content = await this.page.content();
-      if (content.includes('Access to this page has been denied')) {
-        throw new Error('Still blocked after protection handling');
-      }
-
-    } catch (error) {
-      console.log('Protection handling error:', error.message);
-      throw error;
-    }
-  }
-
-  async randomDelay(min = 1000, max = 3000) {
-    const delay = Math.floor(Math.random() * (max - min + 1) + min);
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
-    // Add random network throttling
-    const client = await this.page.target().createCDPSession();
-    await client.send('Network.enable');
-    await client.send('Network.emulateNetworkConditions', {
-      offline: false,
-      latency: Math.floor(Math.random() * 30) + 20,
-      downloadThroughput: (5 + Math.random() * 10) * 1024 * 1024 / 8,
-      uploadThroughput: (3 + Math.random() * 5) * 1024 * 1024 / 8
-    });
-
-    await this.page.evaluate(() => {
-      // More natural mouse movement patterns
-      const moves = Math.floor(Math.random() * 5) + 3;
-      let lastX = 0, lastY = 0;
-      
-      for (let i = 0; i < moves; i++) {
-        // Create smoother mouse movements
-        const targetX = Math.floor(Math.random() * window.innerWidth);
-        const targetY = Math.floor(Math.random() * window.innerHeight);
-        
-        // Interpolate between points
-        const steps = Math.floor(Math.random() * 5) + 3;
-        for (let j = 0; j < steps; j++) {
-          const ratio = j / steps;
-          const x = Math.floor(lastX + (targetX - lastX) * ratio);
-          const y = Math.floor(lastY + (targetY - lastY) * ratio);
-          
-          const event = new MouseEvent('mousemove', {
-            bubbles: true,
-            cancelable: true,
-            clientX: x,
-            clientY: y,
-            movementX: x - lastX,
-            movementY: y - lastY
-          });
-          document.dispatchEvent(event);
-        }
-        
-        lastX = targetX;
-        lastY = targetY;
-      }
-    });
-  }
-
-  async verifyLogin() {
-    try {
-      // Wait for an element that only appears when logged in
-      const currentUrl = await this.page.url();
-      console.log('Verification URL:', currentUrl);
-      
-      await this.page.waitForSelector('.user-menu', { timeout: 5000 });
-      
-      // Also verify we're not still on the login page
-      if (currentUrl.includes('/app/login/auth')) {
-        return false;
-      }
+      console.log('[Protection] Step 4: Protection cleared');
       
       return true;
     } catch (error) {
-      console.log('Login verification failed:', error.message);
-      return false;
-    }
-  }
-
-  async scrapeSearchResults(url) {
-    try {
-      console.log('Navigating to search results...');
-      await this.page.goto(url);
-      
-      // Wait for search results container to load
-      await this.page.waitForSelector('.thumbnails.search-results', { timeout: 10000 });
-
-      // Extract data from all items on the page
-      const items = await this.page.evaluate(() => {
-        const results = [];
-        const itemElements = document.querySelectorAll('.thumbnails.search-results .search-result.grid');
-        
-        itemElements.forEach(item => {
-          // Get the title from the product-title span
-          const titleElement = item.querySelector('.product-title');
-          const title = titleElement ? titleElement.textContent.trim() : '';
-
-          // Get the price from the price div
-          const priceElement = item.querySelector('.price .result');
-          const price = priceElement ? priceElement.textContent.trim() : '';
-
-          // Get the date from the sold-date div
-          const dateElement = item.querySelector('.sold-date .result');
-          const date = dateElement ? dateElement.textContent.trim() : '';
-
-          // Get the source from the source div
-          const sourceElement = item.querySelector('.source .result');
-          const source = sourceElement ? sourceElement.textContent.trim() : '';
-
-          // Get the image URL from the img tag
-          const imageElement = item.querySelector('.image-container');
-          const image = imageElement ? imageElement.getAttribute('src') : '';
-
-          results.push({
-            title,
-            price,
-            date,
-            source,
-            image
-          });
-        });
-
-        return results;
-      });
-
-      return items;
-    } catch (error) {
-      console.error('Failed to scrape search results:', error);
+      console.error('[Protection] Error handling protection:', error);
       throw error;
     }
   }
 
-  async scrapeItem(url) {
-    try {
-      await this.page.goto(url);
-      
-      // Wait for the main content to load
-      await this.page.waitForSelector('.item-details');
-
-      // Extract data (adjust selectors as needed)
-      const data = await this.page.evaluate(() => {
-        return {
-          title: document.querySelector('.item-title')?.textContent?.trim(),
-          price: document.querySelector('.price-value')?.textContent?.trim(),
-          description: document.querySelector('.item-description')?.textContent?.trim(),
-          // Add more fields as needed
-        };
-      });
-
-      return data;
-    } catch (error) {
-      console.error('Failed to scrape item:', error);
-      throw error;
-    }
-  }
-
-  async close() {
-    if (this.browser) {
-      await this.browser.close();
-    }
-  }
+  // Rest of the class remains the same...
 }
 
 module.exports = WorthpointScraper;

@@ -41,7 +41,49 @@ class ChristiesScraper {
   async searchAuctions(params = {}) {
     try {
       await this.initialize();
-      console.log('Browser initialized successfully');
+      
+      // Add more realistic browser headers
+      await this.page.setExtraHTTPHeaders({
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'DNT': '1',
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Not_A_Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1'
+      });
+
+      // Add more realistic browser properties
+      await this.page.evaluateOnNewDocument(() => {
+        Object.defineProperties(navigator, {
+          webdriver: { get: () => undefined },
+          languages: { get: () => ['en-US', 'en'] },
+          plugins: { get: () => [
+            {
+              0: { type: 'application/x-google-chrome-pdf' },
+              description: 'Portable Document Format',
+              filename: 'internal-pdf-viewer',
+              length: 1,
+              name: 'Chrome PDF Plugin'
+            }
+          ]},
+          hardwareConcurrency: { get: () => 8 },
+          deviceMemory: { get: () => 8 },
+          connection: { get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+          })}
+        });
+      });
 
       // Construct the URL with parameters
       const searchUrl = new URL('https://www.christies.com/en/results');
@@ -49,10 +91,36 @@ class ChristiesScraper {
       if (params.year) searchUrl.searchParams.set('year', params.year);
       
       console.log('Navigating to:', searchUrl.toString());
-      await this.page.goto(searchUrl.toString(), { 
+      const response = await this.page.goto(searchUrl.toString(), { 
         waitUntil: 'networkidle0',
         timeout: 60000 // Increase timeout to 60 seconds
       });
+      
+      // Check if we hit a protection page
+      const html = await this.page.content();
+      if (html.includes('Access to this page has been denied')) {
+        console.log('Protection page detected, handling...');
+        await this.handleProtection();
+        
+        // Retry the navigation after handling protection
+        await this.page.goto(searchUrl.toString(), { 
+          waitUntil: 'networkidle0',
+          timeout: 60000
+        });
+      }
+
+      // Wait for either results or no results message
+      await Promise.race([
+        this.page.waitForSelector('.chr-event-tile, .chr-lot-tile', { timeout: 60000 }),
+        this.page.waitForSelector('.chr-calendar-no-results', { timeout: 60000 })
+      ]);
+
+      // Check if we have a "no results" message
+      const noResults = await this.page.$('.chr-calendar-no-results');
+      if (noResults) {
+        console.log('No auction results found');
+        return [];
+      }
 
       // Log the complete HTML and page state
       const fullHtml = await this.page.evaluate(() => {
@@ -85,38 +153,6 @@ class ChristiesScraper {
 
       // Wait for auction tiles to be rendered
       console.log('Waiting for content to load...');
-      
-      // Wait for either the results or "no results" message
-      await Promise.race([
-        this.page.waitForSelector('.chr-event-tile, .chr-lot-tile', { timeout: 30000 }),
-        this.page.waitForSelector('.chr-search-results__no-results', { timeout: 30000 })
-      ]).catch(async (error) => {
-        console.log('[Christie\'s] Selector wait failed, checking page state:');
-        const state = await this.page.evaluate(() => ({
-          url: window.location.href,
-          readyState: document.readyState,
-          loadingIndicators: {
-            loading: !!document.querySelector('.loading-indicator'),
-            ariaBusy: !!document.querySelector('[aria-busy="true"]'),
-            spinners: !!document.querySelector('.spinner, .loading')
-          },
-          relevantElements: {
-            eventTiles: document.querySelectorAll('.chr-event-tile').length,
-            lotTiles: document.querySelectorAll('.chr-lot-tile').length,
-            noResults: !!document.querySelector('.chr-search-results__no-results'),
-            mainContent: document.querySelector('main')?.innerHTML.substring(0, 500)
-          }
-        }));
-        console.log(JSON.stringify(state, null, 2));
-        throw error;
-      });
-
-      // Check if we have a "no results" message
-      const noResults = await this.page.$('.chr-search-results__no-results');
-      if (noResults) {
-        console.log('No auction results found');
-        return [];
-      }
 
       // Wait for the loading indicator to disappear
       await this.page.waitForFunction(() => {
@@ -212,6 +248,40 @@ class ChristiesScraper {
       return details;
     } catch (error) {
       console.error('Lot details error:', error);
+      throw error;
+    }
+  }
+
+  async handleProtection() {
+    try {
+      console.log('Handling protection page...');
+      
+      // Add random mouse movements
+      await this.page.mouse.move(
+        100 + Math.random() * 100,
+        100 + Math.random() * 100,
+        { steps: 10 }
+      );
+      
+      // Wait a bit and add some scrolling
+      await this.page.evaluate(() => {
+        window.scrollTo({
+          top: 100,
+          behavior: 'smooth'
+        });
+        return new Promise(r => setTimeout(r, 1000));
+      });
+      
+      // Wait for protection to clear
+      await this.page.waitForFunction(() => {
+        return !document.querySelector('[id^="px-captcha"]') && 
+               !document.querySelector('.px-block');
+      }, { timeout: 30000 });
+      
+      console.log('Protection cleared');
+      return true;
+    } catch (error) {
+      console.error('Error handling protection:', error);
       throw error;
     }
   }

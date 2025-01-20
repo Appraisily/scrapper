@@ -124,22 +124,40 @@ class InvaluableScraper {
       await this.page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
 
       console.log('[Login] Step 8: Locating submit button');
-      // Make sure we're clicking the login form's submit button
-      const submitButton = await this.page.$('#login-form #signInBtn');
+      // Get the form and button
+      const form = await this.page.$('#login-form');
+      const submitButton = await form.$('#signInBtn');
+      
       if (!submitButton) {
         throw new Error('Login submit button not found');
       }
       console.log('[Login] Step 8a: Submit button found');
 
       console.log('[Login] Step 9: Submitting form and waiting for navigation');
-      // Click the sign in button and wait for navigation
-      await Promise.all([
-        this.page.waitForNavigation({
-          waitUntil: 'networkidle0',
-          timeout: 60000 
-        }),
-        submitButton.click()
-      ]);
+      
+      try {
+        // Submit the form directly instead of clicking the button
+        await Promise.all([
+          this.page.waitForNavigation({
+            waitUntil: ['domcontentloaded', 'networkidle0'],
+            timeout: 30000
+          }),
+          form.evaluate(form => form.submit())
+        ]);
+      } catch (error) {
+        console.log('[Login] Navigation error:', error.message);
+        
+        // Check if we're still on the login page
+        const currentUrl = await this.page.url();
+        if (currentUrl.includes('/login')) {
+          // Try clicking the button as fallback
+          await submitButton.click();
+          await this.page.waitForNavigation({
+            waitUntil: ['domcontentloaded', 'networkidle0'],
+            timeout: 30000
+          });
+        }
+      }
 
       console.log('[Login] Step 10: Verifying login success');
       // Verify login success by checking for account-specific elements
@@ -172,7 +190,11 @@ class InvaluableScraper {
       // Take screenshot for debugging
       try {
         await this.page.screenshot({ path: '/tmp/invaluable-login-error.png' });
-        console.log('Error screenshot saved to /tmp/invaluable-login-error.png');
+        console.log('[Login] Error screenshot saved to /tmp/invaluable-login-error.png');
+        
+        // Log the current page content
+        const content = await this.page.content();
+        console.log('[Login] Page content at error:', content.substring(0, 1000));
       } catch (screenshotError) {
         console.error('Failed to save error screenshot:', screenshotError.message);
       }
