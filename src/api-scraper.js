@@ -28,34 +28,29 @@ class WorthpointApiScraper {
   async login(username, password) {
     try {
       console.log('Getting initial page to collect cookies...');
-      const loginPageResponse = await this.axios.get('/', {
+      const loginPageResponse = await this.axios.get('/app/login/auth', {
         maxRedirects: 5,
         validateStatus: status => status < 500
       });
       
       this.cookies = loginPageResponse.headers['set-cookie'] || [];
+      const html = loginPageResponse.data;
       
       // Check if we got a CAPTCHA challenge
-      if (loginPageResponse.data.includes('Please verify you are a human')) {
+      if (html.includes('Please verify you are a human')) {
         console.error('CAPTCHA challenge detected');
         throw new Error('CAPTCHA verification required');
       }
       
       // Get CSRF token
-      console.log('Getting CSRF token...');
-      const csrfResponse = await this.axios.get('/app/login/auth', {
-        headers: {
-          'Cookie': this.cookies.join('; '),
-          'Referer': 'https://www.worthpoint.com/'
-        }
-      });
-      
-      const csrfMatch = csrfResponse.data.match(/<input[^>]*name="_csrf"[^>]*value="([^"]*)"[^>]*>/);
+      const csrfMatch = html.match(/<input[^>]*name="_csrf"[^>]*value="([^"]*)"[^>]*>/);
       if (!csrfMatch) {
         console.error('CSRF token not found in response');
+        console.log('Response HTML:', html.substring(0, 1000)); // Log first 1000 chars for debugging
         throw new Error('Could not find CSRF token');
       }
       this.csrfToken = csrfMatch[1];
+      console.log('CSRF token found:', this.csrfToken);
 
       // Perform login
       const loginResponse = await this.axios.post('/app/login/auth', {

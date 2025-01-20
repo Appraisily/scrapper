@@ -61,43 +61,6 @@ class WorthpointScraper {
     await this.page.setRequestInterception(true);
     this.page.on('request', (request) => {
       const resourceType = request.resourceType();
-      // Only allow essential resources
-      if (['document', 'xhr', 'fetch', 'script'].includes(resourceType)) {
-        request.continue();
-      } else {
-        // Block CSS, fonts, images, etc.
-        request.abort();
-      }
-    });
-
-    // Clean up the page after load
-    this.page.on('domcontentloaded', async () => {
-      await this.page.evaluate(() => {
-        // Remove injected styles
-        const styles = document.querySelectorAll('style');
-        styles.forEach(style => {
-          if (style.textContent.includes('ant-') || style.textContent.includes('.ant-')) {
-            style.remove();
-          }
-        });
-        
-        // Remove unused elements
-        const selectors = [
-          '.ant-',
-          '[class*="ant-"]',
-          'style:not([data-essential])',
-          'link[rel="stylesheet"]:not([data-essential])'
-        ];
-        selectors.forEach(selector => {
-          document.querySelectorAll(selector).forEach(el => el.remove());
-        });
-      });
-    });
-    
-    // Block unnecessary resource types
-    await this.page.setRequestInterception(true);
-    this.page.on('request', (request) => {
-      const resourceType = request.resourceType();
       const url = request.url();
       
       // Block known analytics and protection scripts
@@ -113,8 +76,7 @@ class WorthpointScraper {
       
       // Only allow essential resources
       if (['document', 'xhr', 'fetch', 'script'].includes(resourceType)) {
-        // Add random delay to look more natural
-        setTimeout(() => request.continue(), Math.random() * 100);
+        request.continue();
       } else {
         request.abort();
       }

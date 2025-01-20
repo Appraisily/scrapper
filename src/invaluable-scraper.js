@@ -47,9 +47,18 @@ class InvaluableScraper {
 
       console.log('Navigating to Invaluable login page...');
       await this.page.goto('https://www.invaluable.com/login', { 
-        waitUntil: 'networkidle0',
+        waitUntil: ['networkidle0', 'domcontentloaded'],
         timeout: 60000
       });
+
+      // Wait for any cookie consent or overlay to load and handle it
+      try {
+        const cookieConsentSelector = '#CybotCookiebotDialogBodyButtonAccept';
+        await this.page.waitForSelector(cookieConsentSelector, { timeout: 5000 });
+        await this.page.click(cookieConsentSelector);
+      } catch (error) {
+        console.log('No cookie consent dialog found');
+      }
 
       // Log detailed page information
       const pageInfo = await this.page.evaluate(() => {
@@ -81,96 +90,30 @@ class InvaluableScraper {
       
       // Wait for login form with increased timeout
       console.log('Waiting for login form...');
-      await this.page.waitForSelector('input[type="email"], #emailLoginPage, input[name="email"]', { 
-        timeout: 30000,
-        visible: true 
-      });
+      
+      // Wait for the login form to be ready
+      await this.page.waitForFunction(() => {
+        const form = document.querySelector('#login-form');
+        const email = document.querySelector('#emailLoginPage');
+        const password = document.querySelector('#passwordLogin');
+        return form && email && password && 
+               window.getComputedStyle(form).display !== 'none' &&
+               window.getComputedStyle(email).display !== 'none';
+      }, { timeout: 30000 });
+      
       console.log('Login form found');
       
-      // Type credentials
-      const emailSelector = await this.page.evaluate(() => {
-        const selectors = ['#emailLoginPage', 'input[type="email"]', 'input[name="email"]'];
-        for (const selector of selectors) {
-          if (document.querySelector(selector)) {
-            return selector;
-          }
-        }
-        return null;
-      });
-
-      const passwordSelector = await this.page.evaluate(() => {
-        const selectors = ['#passwordLogin', 'input[type="password"]', 'input[name="password"]'];
-        for (const selector of selectors) {
-          if (document.querySelector(selector)) {
-            return selector;
-          }
-        }
-        return null;
-      });
-
-      if (!emailSelector || !passwordSelector) {
-        // Log all form-related elements
-        console.log('Available form elements:', await this.page.evaluate(() => {
-          return {
-            inputs: Array.from(document.querySelectorAll('input')).map(input => ({
-              type: input.type,
-              name: input.name,
-              id: input.id,
-              class: input.className
-            })),
-            forms: Array.from(document.querySelectorAll('form')).map(form => ({
-              id: form.id,
-              class: form.className,
-              action: form.action
-            }))
-          };
-        }));
-        throw new Error('Login form elements not found');
-      }
-
       console.log('Entering credentials...');
-      await this.page.type(emailSelector, email);
-      await this.page.type(passwordSelector, password);
+      await this.page.type('#emailLoginPage', email, { delay: 100 });
+      await this.page.type('#passwordLogin', password, { delay: 100 });
       
-      // Look for submit button with multiple possible selectors
-      const submitButton = await this.page.evaluate(() => {
-        const selectors = [
-          'button[type="submit"]',
-          'input[type="submit"]',
-          'button.login-button',
-          'button:contains("Sign In")',
-          'button:contains("Log In")',
-          'input[value="Sign In"]',
-          'input[value="Log In"]'
-        ];
-        
-        for (const selector of selectors) {
-          const button = document.querySelector(selector);
-          if (button) {
-            return selector;
-          }
-        }
-        return null;
-      });
-
-      if (!submitButton) {
-        console.error('Available elements on page:', await this.page.evaluate(() => {
-          return {
-            buttons: Array.from(document.querySelectorAll('button')).map(b => ({
-              type: b.type,
-              text: b.textContent.trim(),
-              class: b.className
-            })),
-            forms: Array.from(document.querySelectorAll('form')).length
-          };
-        }));
-        throw new Error('Login submit button not found');
-      }
+      // Small delay before clicking submit
+      await this.page.waitForTimeout(500);
       
       console.log('Submitting login form...');
       await Promise.all([
         this.page.waitForNavigation({ waitUntil: 'networkidle0' }),
-        this.page.click(submitButton)
+        this.page.click('#signInBtn')
       ]);
       
       // Verify login success
@@ -182,6 +125,9 @@ class InvaluableScraper {
       
       this.isLoggedIn = true;
       console.log('Successfully logged in to Invaluable');
+      
+      // Wait a moment for any post-login redirects
+      await this.page.waitForTimeout(2000);
       return true;
 
     } catch (error) {

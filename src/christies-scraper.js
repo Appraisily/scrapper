@@ -75,21 +75,33 @@ class ChristiesScraper {
       console.log('Page Information:', JSON.stringify(pageInfo, null, 2));
 
       // Wait for auction tiles to be rendered
-      console.log('Waiting for auction results to load...');
-      await this.page.waitForSelector('.chr-event-tile, .chr-lot-tile', { 
-        timeout: 60000,
-        visible: true 
+      console.log('Waiting for content to load...');
+      
+      // Wait for either the results or "no results" message
+      await Promise.race([
+        this.page.waitForSelector('.chr-event-tile, .chr-lot-tile', { timeout: 30000 }),
+        this.page.waitForSelector('.chr-search-results__no-results', { timeout: 30000 })
+      ]);
+
+      // Check if we have a "no results" message
+      const noResults = await this.page.$('.chr-search-results__no-results');
+      if (noResults) {
+        console.log('No auction results found');
+        return [];
+      }
+
+      // Wait for the loading indicator to disappear
+      await this.page.waitForFunction(() => {
+        const loader = document.querySelector('.chr-loading');
+        return !loader || loader.style.display === 'none';
       });
+      
       console.log('Auction results loaded');
 
       // Extract auction data
       const auctions = await this.page.evaluate(() => {
         const tiles = Array.from(document.querySelectorAll('.chr-event-tile, .chr-lot-tile'));
-        console.log('Auction tiles found:', {
-          total: tiles.length,
-          types: tiles.map(t => t.className).join(', '),
-          firstTileHTML: tiles[0]?.outerHTML
-        });
+        if (!tiles.length) return [];
         
         return tiles.map(tile => {
           const titleEl = tile.querySelector('.chr-event-tile__title, .chr-lot-tile__title');
@@ -99,7 +111,7 @@ class ChristiesScraper {
           const imageEl = tile.querySelector('img');
           const typeEl = tile.querySelector('.chr-event-tile__subtitle, .chr-lot-tile__subtitle');
           const idMatch = tile.innerHTML.match(/SaleID=(\d+)/);
-
+          
           const imageUrl = imageEl ? (
             imageEl.getAttribute('data-srcset') || 
             imageEl.getAttribute('srcset') || 
@@ -120,7 +132,7 @@ class ChristiesScraper {
         });
       });
 
-      console.log(`Successfully extracted ${auctions.length} auctions`);
+      console.log(`Successfully extracted ${auctions?.length || 0} auctions`);
       
       // If no auctions found, log more details about the page
       if (auctions.length === 0) {
@@ -128,7 +140,8 @@ class ChristiesScraper {
           return {
             url: window.location.href,
             html: document.documentElement.outerHTML,
-            scripts: Array.from(document.scripts).map(s => s.src).filter(Boolean),
+            visibleElements: Array.from(document.querySelectorAll('*'))
+              .filter(el => window.getComputedStyle(el).display !== 'none'),
             links: Array.from(document.links).map(l => l.href).slice(0, 10)
           };
         }));
@@ -137,11 +150,14 @@ class ChristiesScraper {
       return auctions;
 
     } catch (error) {
-      console.error('Christie\'s search error:', error.message);
+      console.error('Christie\'s search error:', error);
       if (error.message.includes('timeout')) {
         console.error('Page load timed out - the site might be slow or blocking requests');
+        // Take a screenshot for debugging
+        await this.page.screenshot({ path: '/tmp/christies-timeout.png' });
+        console.log('Timeout screenshot saved to /tmp/christies-timeout.png');
       }
-      if (error.message.includes('net::ERR_')) {
+      if (error.message?.includes('net::ERR_')) {
         console.error('Network error occurred - check connectivity or if the site is blocking requests');
       }
       throw error;
