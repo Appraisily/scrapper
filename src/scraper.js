@@ -383,6 +383,38 @@ class WorthpointScraper {
 
   async handleProtection() {
     try {
+      console.log('[Protection] Analyzing PerimeterX challenge...');
+      
+      // Wait for the PerimeterX script to load
+      await this.page.waitForFunction(() => {
+        return typeof window._pxAppId !== 'undefined';
+      }, { timeout: 10000 });
+      
+      // Extract the PX app ID and other parameters
+      const pxParams = await this.page.evaluate(() => ({
+        appId: window._pxAppId,
+        jsClientSrc: document.querySelector('script[src*="/init.js"]')?.src,
+        captchaSrc: document.querySelector('script[src*="/captcha.js"]')?.src
+      }));
+      
+      console.log('[Protection] Found PX parameters:', pxParams);
+      
+      // Add required cookies and headers
+      await this.page.setExtraHTTPHeaders({
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1'
+      });
+
       // Add more realistic mouse movements
       await this.page.evaluate(() => {
         const moveCount = Math.floor(Math.random() * 10) + 5;
@@ -404,89 +436,54 @@ class WorthpointScraper {
       const width = 1920 + Math.floor(Math.random() * 100);
       const height = 1080 + Math.floor(Math.random() * 100);
       await this.page.setViewport({ width, height });
-
-      // Check for PerimeterX challenge
-      const isPxChallenge = await this.page.evaluate(async () => {
-        const pxCaptcha = document.querySelector('#px-captcha');
-        const pxBlock = document.querySelector('.px-block');
+      
+      // Handle the PX challenge
+      await this.page.evaluate(() => {
+        // Simulate real browser behavior
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
         
-        const scrollAmount = Math.floor(Math.random() * 100) + 50;
-        window.scrollBy({ 
-          top: scrollAmount, 
-          behavior: 'smooth' 
-        });
-        await new Promise(r => setTimeout(r, 500));
-        window.scrollBy({ 
-          top: -scrollAmount, 
-          behavior: 'smooth' 
-        });
+        // Add canvas fingerprint
+        const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        HTMLCanvasElement.prototype.toDataURL = function(type) {
+          if (type === 'image/png' && this.width === 300 && this.height === 150) {
+            return 'data:image/png;base64,iVBORw0K...'; // Add actual canvas data
+          }
+          return originalToDataURL.apply(this, arguments);
+        };
         
-        // Add touch events simulation
-        if (Math.random() > 0.7) {
-          const touch = new Touch({
-            identifier: Date.now(),
-            target: document.body,
-            clientX: Math.random() * window.innerWidth,
-            clientY: Math.random() * window.innerHeight,
-            radiusX: 2.5,
-            radiusY: 2.5,
-            rotationAngle: 10,
-            force: 0.5
-          });
-          
-          const touchEvent = new TouchEvent('touchstart', {
-            cancelable: true,
-            bubbles: true,
-            touches: [touch],
-            targetTouches: [touch],
-            changedTouches: [touch]
-          });
-          document.body.dispatchEvent(touchEvent);
-        }
-
-        return pxCaptcha !== null || pxBlock !== null;
+        // Add audio fingerprint
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(520, audioContext.currentTime);
+        const compressor = audioContext.createDynamicsCompressor();
+        oscillator.connect(compressor);
+        compressor.connect(audioContext.destination);
       });
-
-      if (isPxChallenge) {
-        console.log('PerimeterX challenge detected, waiting for resolution...');
-        
-        for (let i = 0; i < 3; i++) {
-          await this.randomDelay(1500, 3000);
-          
-          await this.page.evaluate(() => {
-            const events = ['mousemove', 'mousedown', 'mouseup'];
-            events.forEach(eventType => {
-              const event = new MouseEvent(eventType, {
-                bubbles: true,
-                cancelable: true,
-                clientX: Math.floor(Math.random() * window.innerWidth),
-                clientY: Math.floor(Math.random() * window.innerHeight),
-                buttons: eventType === 'mousedown' ? 1 : 0
-              });
-              document.dispatchEvent(event);
-            });
-            
-            // Simulate keyboard events
-            if (Math.random() > 0.7) {
-              const keyEvent = new KeyboardEvent('keydown', {
-                key: 'Tab',
-                code: 'Tab',
-                keyCode: 9,
-                which: 9,
-                bubbles: true
-              });
-              document.dispatchEvent(keyEvent);
-            }
-          });
-        }
-
-        await this.page.waitForFunction(
-          () => !document.querySelector('#px-captcha') && !document.querySelector('.px-block'),
-          { timeout: 30000 }
-        );
+      
+      // Wait for challenge to complete
+      await this.page.waitForFunction(() => {
+        return !document.querySelector('#px-captcha') && 
+               !document.querySelector('.px-block') &&
+               document.cookie.includes('_px3=');
+      }, { timeout: 30000 });
+      
+      console.log('[Protection] Challenge completed successfully');
+      
+      // Get the cookies after challenge
+      const cookies = await this.page.cookies();
+      console.log('[Protection] New cookies:', cookies.map(c => c.name));
+      
+      // Verify we can proceed
+      const content = await this.page.content();
+      if (content.includes('Access to this page has been denied')) {
+        throw new Error('Still blocked after protection handling');
       }
+
     } catch (error) {
       console.log('Protection handling error:', error.message);
+      throw error;
     }
   }
 

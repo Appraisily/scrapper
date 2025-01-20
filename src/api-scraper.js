@@ -30,14 +30,44 @@ class WorthpointApiScraper {
   async login(username, password) {
     try {
       console.log('[API Login] Step 1: Getting initial page to collect cookies...');
+      
+      // Add required headers for initial request
+      const headers = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Pragma': 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      };
+
       const loginPageResponse = await this.axios.get('/app/login/auth', {
         maxRedirects: 5,
-        validateStatus: status => status < 500
+        validateStatus: status => status < 500,
+        headers
       });
       
       // Save the response HTML for debugging
-      const html = loginPageResponse.data;
+      let html = loginPageResponse.data;
       saveHtmlToFile(html, 'worthpoint-api-login');
+      
+      // Check for protection page
+      if (html.includes('Access to this page has been denied')) {
+        console.log('[API Login] Protection page detected, handling challenge...');
+        await this.handleProtectionChallenge();
+        
+        // Retry the login page request after handling protection
+        console.log('[API Login] Retrying login page request...');
+        const retryResponse = await this.axios.get('/app/login/auth', { headers });
+        this.cookies = retryResponse.headers['set-cookie'] || [];
+        html = retryResponse.data;
+        saveHtmlToFile(html, 'worthpoint-api-login-retry');
+      }
       
       console.log('[API Login] Step 2: Checking response status:', loginPageResponse.status);
       console.log('[API Login] Step 3: Checking response headers:', JSON.stringify(loginPageResponse.headers, null, 2));
@@ -236,6 +266,122 @@ class WorthpointApiScraper {
       console.error('Item details error:', error.message);
       throw error;
     }
+  }
+
+  async handleProtectionChallenge() {
+    try {
+      console.log('[Protection] Step 1: Analyzing protection page...');
+
+      // First request to get the challenge
+      const response = await this.axios.get('/app/login/auth', {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1'
+        }
+      });
+      
+      const html = response.data;
+      const cookies = response.headers['set-cookie'] || [];
+      
+      // Extract PX parameters
+      const pxAppIdMatch = html.match(/PX([a-zA-Z0-9]+)/);
+      const pxAppId = pxAppIdMatch ? pxAppIdMatch[1] : null;
+      
+      if (!pxAppId) {
+        throw new Error('Could not find PX App ID');
+      }
+      
+      console.log('[Protection] Step 2: Found PX App ID:', pxAppId);
+      
+      // Generate client-specific data
+      const clientData = {
+        uuid: Math.random().toString(36).substring(2),
+        userAgent: this.axios.defaults.headers['User-Agent'],
+        timeStamp: Date.now(),
+        screenRes: '1920x1080',
+        devicePixelRatio: 1,
+        language: 'en-US',
+        platform: 'Win32',
+        touch: false
+      };
+      
+      // Send client data
+      const challengeResponse = await this.axios.post(
+        `/lIUjcOwl/api/v1/collector`,
+        {
+          appId: pxAppId,
+          tag: 'v8.0.2',
+          uuid: clientData.uuid,
+          cs: this.generateClientScore(clientData),
+          ...clientData
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': cookies.join('; ')
+          }
+        }
+      );
+      
+      console.log('[Protection] Step 3: Challenge response:', challengeResponse.status);
+      
+      // Store cookies for future requests
+      this.cookies = challengeResponse.headers['set-cookie'] || cookies;
+      
+      return true;
+    } catch (error) {
+      console.error('[Protection] Error handling protection:', error);
+      throw error;
+    }
+  }
+  
+  generateClientScore(data) {
+    // Generate a client score based on provided data
+    // This is a simplified version - actual implementation would be more complex
+    const components = [
+      data.uuid,
+      data.userAgent,
+      data.timeStamp,
+      data.screenRes,
+      data.language
+    ];
+    
+    return components.join('').split('').reduce((acc, char) => {
+      return (acc << 5) - acc + char.charCodeAt(0) >>> 0;
+    }, 0).toString(16);
+  }
+
+  async getProtectionScriptUrl() {
+    // Extract the protection script URL from the page
+    const response = await this.axios.get('/app/login/auth');
+    const html = response.data;
+    const match = html.match(/src="([^"]+init\.js)"/);
+    return match ? match[1] : null;
+  }
+
+  async getProtectionParams() {
+    // Extract challenge parameters from the page
+    const response = await this.axios.get('/app/login/auth');
+    const html = response.data;
+    saveHtmlToFile(html, 'worthpoint-protection-params');
+    return {
+      // Add extracted parameters here
+    };
+  }
+
+  async solveProtectionChallenge(params) {
+    // Implement protection challenge solution
+    // This will need to be customized based on the actual protection mechanism
+    return null;
   }
 }
 
