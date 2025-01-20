@@ -48,8 +48,36 @@ class InvaluableScraper {
       console.log('Navigating to Invaluable login page...');
       await this.page.goto('https://www.invaluable.com/login', { 
         waitUntil: 'networkidle0',
-        timeout: 60000 
+        timeout: 60000
       });
+
+      // Log detailed page information
+      const pageInfo = await this.page.evaluate(() => {
+        return {
+          title: document.title,
+          url: window.location.href,
+          html: document.documentElement.outerHTML,
+          forms: Array.from(document.forms).map(form => ({
+            id: form.id,
+            action: form.action,
+            method: form.method,
+            elements: Array.from(form.elements).map(el => ({
+              tagName: el.tagName,
+              type: el.type,
+              id: el.id,
+              name: el.name,
+              class: el.className
+            }))
+          })),
+          scripts: Array.from(document.scripts)
+            .filter(s => s.src)
+            .map(s => s.src),
+          iframes: Array.from(document.querySelectorAll('iframe'))
+            .map(f => ({src: f.src, id: f.id}))
+        };
+      });
+      
+      console.log('Page Information:', JSON.stringify(pageInfo, null, 2));
       
       // Wait for login form with increased timeout
       console.log('Waiting for login form...');
@@ -81,8 +109,23 @@ class InvaluableScraper {
       });
 
       if (!emailSelector || !passwordSelector) {
+        // Log all form-related elements
+        console.log('Available form elements:', await this.page.evaluate(() => {
+          return {
+            inputs: Array.from(document.querySelectorAll('input')).map(input => ({
+              type: input.type,
+              name: input.name,
+              id: input.id,
+              class: input.className
+            })),
+            forms: Array.from(document.querySelectorAll('form')).map(form => ({
+              id: form.id,
+              class: form.className,
+              action: form.action
+            }))
+          };
+        }));
         throw new Error('Login form elements not found');
-      }
 
       console.log('Entering credentials...');
       await this.page.type(emailSelector, email);

@@ -52,6 +52,27 @@ class ChristiesScraper {
         waitUntil: 'networkidle0',
         timeout: 60000 // Increase timeout to 60 seconds
       });
+      
+      // Log detailed page information
+      const pageInfo = await this.page.evaluate(() => {
+        return {
+          title: document.title,
+          url: window.location.href,
+          html: document.documentElement.outerHTML,
+          elements: {
+            eventTiles: document.querySelectorAll('.chr-event-tile').length,
+            lotTiles: document.querySelectorAll('.chr-lot-tile').length,
+            totalTiles: document.querySelectorAll('.chr-event-tile, .chr-lot-tile').length
+          },
+          scripts: Array.from(document.scripts)
+            .filter(s => s.src)
+            .map(s => s.src),
+          iframes: Array.from(document.querySelectorAll('iframe'))
+            .map(f => ({src: f.src, id: f.id}))
+        };
+      });
+      
+      console.log('Page Information:', JSON.stringify(pageInfo, null, 2));
 
       // Wait for auction tiles to be rendered
       console.log('Waiting for auction results to load...');
@@ -64,7 +85,11 @@ class ChristiesScraper {
       // Extract auction data
       const auctions = await this.page.evaluate(() => {
         const tiles = Array.from(document.querySelectorAll('.chr-event-tile, .chr-lot-tile'));
-        console.log(`Found ${tiles.length} auction tiles`);
+        console.log('Auction tiles found:', {
+          total: tiles.length,
+          types: tiles.map(t => t.className).join(', '),
+          firstTileHTML: tiles[0]?.outerHTML
+        });
         
         return tiles.map(tile => {
           const titleEl = tile.querySelector('.chr-event-tile__title, .chr-lot-tile__title');
@@ -96,6 +121,19 @@ class ChristiesScraper {
       });
 
       console.log(`Successfully extracted ${auctions.length} auctions`);
+      
+      // If no auctions found, log more details about the page
+      if (auctions.length === 0) {
+        console.log('No auctions found. Page details:', await this.page.evaluate(() => {
+          return {
+            url: window.location.href,
+            html: document.documentElement.outerHTML,
+            scripts: Array.from(document.scripts).map(s => s.src).filter(Boolean),
+            links: Array.from(document.links).map(l => l.href).slice(0, 10)
+          };
+        }));
+      }
+      
       return auctions;
 
     } catch (error) {

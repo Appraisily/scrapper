@@ -11,8 +11,6 @@ class WorthpointApiScraper {
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
         'DNT': '1',
-        'Origin': 'https://www.worthpoint.com',
-        'Referer': 'https://www.worthpoint.com/login',
         'Pragma': 'no-cache',
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
@@ -24,19 +22,47 @@ class WorthpointApiScraper {
       }
     });
     this.cookies = null;
+    this.csrfToken = null;
   }
 
   async login(username, password) {
     try {
-      // Get the login page first to get any necessary tokens/cookies
-      const loginPageResponse = await this.axios.get('/app/login/auth');
+      console.log('Getting initial page to collect cookies...');
+      const loginPageResponse = await this.axios.get('/', {
+        maxRedirects: 5,
+        validateStatus: status => status < 500
+      });
+      
       this.cookies = loginPageResponse.headers['set-cookie'] || [];
+      
+      // Check if we got a CAPTCHA challenge
+      if (loginPageResponse.data.includes('Please verify you are a human')) {
+        console.error('CAPTCHA challenge detected');
+        throw new Error('CAPTCHA verification required');
+      }
+      
+      // Get CSRF token
+      console.log('Getting CSRF token...');
+      const csrfResponse = await this.axios.get('/app/login/auth', {
+        headers: {
+          'Cookie': this.cookies.join('; '),
+          'Referer': 'https://www.worthpoint.com/'
+        }
+      });
+      
+      const csrfMatch = csrfResponse.data.match(/<input[^>]*name="_csrf"[^>]*value="([^"]*)"[^>]*>/);
+      if (!csrfMatch) {
+        console.error('CSRF token not found in response');
+        throw new Error('Could not find CSRF token');
+      }
+      this.csrfToken = csrfMatch[1];
 
       // Perform login
       const loginResponse = await this.axios.post('/app/login/auth', {
         j_username: username,
         j_password: password,
-        _spring_security_remember_me: true
+        _spring_security_remember_me: true,
+        _csrf: this.csrfToken
       }, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -54,9 +80,28 @@ class WorthpointApiScraper {
 
       throw new Error('Login failed');
     } catch (error) {
-      console.error('Login error:', error.message, error.response?.data);
+      console.error('Login error:', error.message);
+      
+      // Log detailed error information
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response headers:', error.response.headers);
+        if (typeof error.response.data === 'string' && error.response.data.includes('Please verify you are a human')) {
+          console.error('CAPTCHA challenge detected in error response');
+          throw new Error('CAPTCHA verification required');
+        }
+      }
+      
       if (error.response?.status === 403) {
         console.error('Login forbidden - possible CSRF or security issue');
+        // Log the actual response content for debugging
+        if (error.response.data) {
+          console.error('Response content:', 
+            typeof error.response.data === 'string' 
+              ? error.response.data.substring(0, 1000) 
+              : JSON.stringify(error.response.data).substring(0, 1000)
+          );
+        }
       }
       throw error;
     }

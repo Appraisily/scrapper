@@ -10,34 +10,155 @@ class WorthpointScraper {
 
   async initialize() {
     console.log('Initializing browser...');
+    // Add flags to block unnecessary resources
     const flags = [
       '--enable-font-antialiasing',
       '--font-render-hinting=medium',
       '--window-size=1920,1080',
-      '--disable-blink-features',
+      // Disable automation flags
+      '--disable-blink-features=AutomationControlled',
+      '--disable-blink-features=AutomationControlledInHeadless',
+      // Memory optimization
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-blink-features=AutomationControlled',
+      // Performance flags
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
       '--disable-features=IsolateOrigins,site-per-process',
       '--enable-features=NetworkService,NetworkServiceInProcess',
       '--force-color-profile=srgb',
       '--metrics-recording-only',
-      '--password-store=basic'
+      '--password-store=basic',
+      // Block unnecessary resource types
+      '--disable-javascript-harmony-shipping',
+      '--disable-site-isolation-trials',
+      // Resource optimization
+      '--disable-features=IsolateOrigins,site-per-process,site-per-process-strict,CrossSiteDocumentBlockingIfIsolating',
+      '--disable-web-security',
+      '--disable-features=ScriptStreaming',
+      // Block unnecessary resources
+      '--block-new-web-contents',
+      '--disable-popup-blocking'
     ];
 
     this.browser = await puppeteer.launch({
       headless: 'new',
       ignoreHTTPSErrors: true,
-      args: flags
+      ignoreHTTPSErrors: true,
+      args: flags,
+      defaultViewport: {
+        width: 1920,
+        height: 1080,
+        deviceScaleFactor: 1,
+      }
+      // Block unnecessary resource types
+      defaultViewport: {
+        width: 1920,
+        height: 1080,
+        deviceScaleFactor: 1,
+      }
     });
     console.log('Browser launched successfully');
     this.page = await this.browser.newPage();
     
+    // Block unnecessary resource types
+    await this.page.setRequestInterception(true);
+    this.page.on('request', (request) => {
+      const resourceType = request.resourceType();
+      // Only allow essential resources
+      if (['document', 'xhr', 'fetch', 'script'].includes(resourceType)) {
+        request.continue();
+      } else {
+        // Block CSS, fonts, images, etc.
+        request.abort();
+      }
+    });
+
+    // Clean up the page after load
+    this.page.on('domcontentloaded', async () => {
+      await this.page.evaluate(() => {
+        // Remove injected styles
+        const styles = document.querySelectorAll('style');
+        styles.forEach(style => {
+          if (style.textContent.includes('ant-') || style.textContent.includes('.ant-')) {
+            style.remove();
+          }
+        });
+        
+        // Remove unused elements
+        const selectors = [
+          '.ant-',
+          '[class*="ant-"]',
+          'style:not([data-essential])',
+          'link[rel="stylesheet"]:not([data-essential])'
+        ];
+        selectors.forEach(selector => {
+          document.querySelectorAll(selector).forEach(el => el.remove());
+        });
+      });
+    });
+    
+    // Block unnecessary resource types
+    await this.page.setRequestInterception(true);
+    this.page.on('request', (request) => {
+      const resourceType = request.resourceType();
+      const url = request.url();
+      
+      // Block known analytics and protection scripts
+      if (url.includes('google-analytics') || 
+          url.includes('doubleclick') ||
+          url.includes('facebook') ||
+          url.includes('perimeterx') ||
+          url.includes('cookieyes') ||
+          url.includes('profitwell')) {
+        request.abort();
+        return;
+      }
+      
+      // Only allow essential resources
+      if (['document', 'xhr', 'fetch', 'script'].includes(resourceType)) {
+        // Add random delay to look more natural
+        setTimeout(() => request.continue(), Math.random() * 100);
+      } else {
+        request.abort();
+      }
+    });
+
     // Override navigator.webdriver
     await this.page.evaluateOnNewDocument(() => {
-      delete Object.getPrototypeOf(navigator).webdriver;
+      // More sophisticated webdriver override
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+        configurable: true
+      });
+      
+      // Add more browser features
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en']
+      });
+      
+      // Add plugins
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [
+          {
+            0: { type: 'application/x-google-chrome-pdf' },
+            description: 'Portable Document Format',
+            filename: 'internal-pdf-viewer',
+            length: 1,
+            name: 'Chrome PDF Plugin'
+          }
+        ]
+      });
+      
+      // Hide automation
+      const originalQuery = window.navigator.permissions.query;
+      window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+          Promise.resolve({ state: Notification.permission }) :
+          originalQuery(parameters)
+      );
       
       // Add hardware concurrency and memory info
       Object.defineProperty(navigator, 'hardwareConcurrency', {
@@ -198,7 +319,14 @@ class WorthpointScraper {
     });
 
     await this.page.setViewport({ width: 1920, height: 1080 });
-    await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    
+    // Rotate between different user agents
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0'
+    ];
+    await this.page.setUserAgent(userAgents[Math.floor(Math.random() * userAgents.length)]);
     
     // Enhanced headers to look more like a real browser
     await this.page.setExtraHTTPHeaders({
