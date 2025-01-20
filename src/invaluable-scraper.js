@@ -126,6 +126,7 @@ class InvaluableScraper {
           };
         }));
         throw new Error('Login form elements not found');
+      }
 
       console.log('Entering credentials...');
       await this.page.type(emailSelector, email);
