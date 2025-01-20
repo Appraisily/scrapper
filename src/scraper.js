@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { saveHtmlToFile } = require('./utils/drive-logger');
 puppeteer.use(StealthPlugin());
 
 class WorthpointScraper {
@@ -328,9 +329,12 @@ class WorthpointScraper {
       // Log the current URL and HTML content
       const currentUrl = await this.page.url();
       const pageContent = await this.page.content();
+      
+      // Save HTML content
+      saveHtmlToFile(pageContent, 'worthpoint-login');
+      
       console.log('Current URL:', currentUrl);
       console.log('Page Title:', await this.page.title());
-      console.log('Page HTML:', pageContent);
       
       await this.handleProtection();
       

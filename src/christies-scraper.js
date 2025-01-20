@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { saveHtmlToFile } = require('./utils/drive-logger');
 puppeteer.use(StealthPlugin());
 
 class ChristiesScraper {
@@ -52,27 +53,35 @@ class ChristiesScraper {
         waitUntil: 'networkidle0',
         timeout: 60000 // Increase timeout to 60 seconds
       });
-      
-      // Log detailed page information
-      const pageInfo = await this.page.evaluate(() => {
+
+      // Log the complete HTML and page state
+      const fullHtml = await this.page.evaluate(() => {
         return {
-          title: document.title,
-          url: window.location.href,
           html: document.documentElement.outerHTML,
-          elements: {
-            eventTiles: document.querySelectorAll('.chr-event-tile').length,
-            lotTiles: document.querySelectorAll('.chr-lot-tile').length,
-            totalTiles: document.querySelectorAll('.chr-event-tile, .chr-lot-tile').length
-          },
-          scripts: Array.from(document.scripts)
-            .filter(s => s.src)
-            .map(s => s.src),
-          iframes: Array.from(document.querySelectorAll('iframe'))
-            .map(f => ({src: f.src, id: f.id}))
+          bodyClasses: document.body.className,
+          visibleElements: Array.from(document.querySelectorAll('*'))
+            .filter(el => {
+              const style = window.getComputedStyle(el);
+              return style.display !== 'none' && style.visibility !== 'hidden';
+            })
+            .map(el => ({
+              tag: el.tagName.toLowerCase(),
+              id: el.id,
+              classes: Array.from(el.classList),
+              text: el.textContent.trim().substring(0, 100)
+            }))
         };
       });
       
-      console.log('Page Information:', JSON.stringify(pageInfo, null, 2));
+      // Save HTML content
+      saveHtmlToFile(fullHtml.html, 'christies-search');
+      
+      // Wait for any dynamic content to load
+      await this.page.waitForFunction(() => {
+        return document.readyState === 'complete' && 
+               !document.querySelector('.loading-indicator') &&
+               !document.querySelector('[aria-busy="true"]');
+      }, { timeout: 30000 });
 
       // Wait for auction tiles to be rendered
       console.log('Waiting for content to load...');
@@ -81,7 +90,26 @@ class ChristiesScraper {
       await Promise.race([
         this.page.waitForSelector('.chr-event-tile, .chr-lot-tile', { timeout: 30000 }),
         this.page.waitForSelector('.chr-search-results__no-results', { timeout: 30000 })
-      ]);
+      ]).catch(async (error) => {
+        console.log('[Christie\'s] Selector wait failed, checking page state:');
+        const state = await this.page.evaluate(() => ({
+          url: window.location.href,
+          readyState: document.readyState,
+          loadingIndicators: {
+            loading: !!document.querySelector('.loading-indicator'),
+            ariaBusy: !!document.querySelector('[aria-busy="true"]'),
+            spinners: !!document.querySelector('.spinner, .loading')
+          },
+          relevantElements: {
+            eventTiles: document.querySelectorAll('.chr-event-tile').length,
+            lotTiles: document.querySelectorAll('.chr-lot-tile').length,
+            noResults: !!document.querySelector('.chr-search-results__no-results'),
+            mainContent: document.querySelector('main')?.innerHTML.substring(0, 500)
+          }
+        }));
+        console.log(JSON.stringify(state, null, 2));
+        throw error;
+      });
 
       // Check if we have a "no results" message
       const noResults = await this.page.$('.chr-search-results__no-results');

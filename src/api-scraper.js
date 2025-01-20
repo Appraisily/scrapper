@@ -1,10 +1,12 @@
 const axios = require('axios');
+const { saveHtmlToFile } = require('./utils/drive-logger');
 
 class WorthpointApiScraper {
   constructor() {
     this.axios = axios.create({
       baseURL: 'https://www.worthpoint.com',
       withCredentials: true,
+      maxRedirects: 5,
       headers: {
         'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -27,38 +29,50 @@ class WorthpointApiScraper {
 
   async login(username, password) {
     try {
-      console.log('Getting initial page to collect cookies...');
+      console.log('[API Login] Step 1: Getting initial page to collect cookies...');
       const loginPageResponse = await this.axios.get('/app/login/auth', {
         maxRedirects: 5,
         validateStatus: status => status < 500
       });
       
-      this.cookies = loginPageResponse.headers['set-cookie'] || [];
+      // Save the response HTML for debugging
       const html = loginPageResponse.data;
+      saveHtmlToFile(html, 'worthpoint-api-login');
+      
+      console.log('[API Login] Step 2: Checking response status:', loginPageResponse.status);
+      console.log('[API Login] Step 3: Checking response headers:', JSON.stringify(loginPageResponse.headers, null, 2));
+      
+      this.cookies = loginPageResponse.headers['set-cookie'] || [];
+      console.log('[API Login] Step 4: Cookies received:', this.cookies.length);
       
       // Check if we got a CAPTCHA challenge
       if (html.includes('Please verify you are a human')) {
-        console.error('CAPTCHA challenge detected');
+        console.error('[API Login] Step 5a: CAPTCHA challenge detected');
         throw new Error('CAPTCHA verification required');
       }
       
+      console.log('[API Login] Step 5: Looking for CSRF token in HTML');
+      
       // Get CSRF token
-      const csrfMatch = html.match(/<input[^>]*name="_csrf"[^>]*value="([^"]*)"[^>]*>/);
+      const csrfMatch = html.match(/name="_csrf"\s+value="([^"]+)"/);
       if (!csrfMatch) {
-        console.error('CSRF token not found in response');
-        console.log('Response HTML:', html.substring(0, 1000)); // Log first 1000 chars for debugging
+        console.error('[API Login] Step 6a: CSRF token not found in response');
+        console.log('[API Login] Step 6b: First 1000 chars of HTML:', html.substring(0, 1000));
         throw new Error('Could not find CSRF token');
       }
       this.csrfToken = csrfMatch[1];
-      console.log('CSRF token found:', this.csrfToken);
+      console.log('[API Login] Step 6: CSRF token found:', this.csrfToken);
+
+      console.log('[API Login] Step 7: Preparing login request');
+      const formData = new URLSearchParams();
+      formData.append('j_username', username);
+      formData.append('j_password', password);
+      formData.append('_spring_security_remember_me', 'true');
+      formData.append('_csrf', this.csrfToken);
 
       // Perform login
-      const loginResponse = await this.axios.post('/app/login/auth', {
-        j_username: username,
-        j_password: password,
-        _spring_security_remember_me: true,
-        _csrf: this.csrfToken
-      }, {
+      console.log('[API Login] Step 8: Sending login request');
+      const loginResponse = await this.axios.post('/app/login/auth', formData, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Cookie': this.cookies.join('; '),
@@ -67,31 +81,46 @@ class WorthpointApiScraper {
         }
       });
 
+      console.log('[API Login] Step 9: Login response status:', loginResponse.status);
+      
       // Check if login was successful by looking for redirect
       if (loginResponse.status === 302 || loginResponse.headers.location) {
         this.cookies = loginResponse.headers['set-cookie'] || this.cookies;
+        console.log('[API Login] Step 10: Login successful, received new cookies');
         return true;
       }
 
+      console.log('[API Login] Step 10a: Login failed - no redirect received');
       throw new Error('Login failed');
     } catch (error) {
-      console.error('Login error:', error.message);
+      console.error('[API Login] Error:', error.message);
       
       // Log detailed error information
       if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response headers:', error.response.headers);
+        console.error('[API Login] Error response status:', error.response.status);
+        console.error('[API Login] Error response headers:', error.response.headers);
+        
+        // Save error response HTML
+        if (error.response.data) {
+          saveHtmlToFile(
+            typeof error.response.data === 'string' 
+              ? error.response.data 
+              : JSON.stringify(error.response.data),
+            'worthpoint-api-login-error'
+          );
+        }
+        
         if (typeof error.response.data === 'string' && error.response.data.includes('Please verify you are a human')) {
-          console.error('CAPTCHA challenge detected in error response');
+          console.error('[API Login] CAPTCHA challenge detected in error response');
           throw new Error('CAPTCHA verification required');
         }
       }
       
       if (error.response?.status === 403) {
-        console.error('Login forbidden - possible CSRF or security issue');
+        console.error('[API Login] Login forbidden - possible CSRF or security issue');
         // Log the actual response content for debugging
         if (error.response.data) {
-          console.error('Response content:', 
+          console.error('[API Login] Response content:', 
             typeof error.response.data === 'string' 
               ? error.response.data.substring(0, 1000) 
               : JSON.stringify(error.response.data).substring(0, 1000)

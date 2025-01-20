@@ -1,5 +1,6 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { saveHtmlToFile } = require('./utils/drive-logger');
 puppeteer.use(StealthPlugin());
 
 class InvaluableScraper {
@@ -41,97 +42,131 @@ class InvaluableScraper {
   async login(email, password) {
     try {
       if (this.isLoggedIn) {
-        console.log('Already logged in, skipping login');
+        console.log('[Login] Already logged in, skipping login process');
         return true;
       }
 
-      console.log('Navigating to Invaluable login page...');
+      console.log('[Login] Step 1: Navigating to login page');
       await this.page.goto('https://www.invaluable.com/login', { 
         waitUntil: ['networkidle0', 'domcontentloaded'],
         timeout: 60000
       });
+      
+      console.log('[Login] Step 2: Waiting for initial page load');
+      // Wait for scripts to load
+      await this.page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
 
-      // Wait for any cookie consent or overlay to load and handle it
+      // Save initial page HTML
+      const initialHtml = await this.page.content();
+      saveHtmlToFile(initialHtml, 'invaluable-login');
+      
+      console.log('[Login] Step 3: Checking for cookie consent dialog');
+      // Handle cookie consent if present
       try {
-        const cookieConsentSelector = '#CybotCookiebotDialogBodyButtonAccept';
-        await this.page.waitForSelector(cookieConsentSelector, { timeout: 5000 });
-        await this.page.click(cookieConsentSelector);
+        const cookieConsentFrame = await this.page.$('iframe[id^="CybotCookiebotDialog"]');
+        if (cookieConsentFrame) {
+          console.log('[Login] Step 3a: Cookie consent dialog found, accepting');
+          const frame = await cookieConsentFrame.contentFrame();
+          await frame.click('#CybotCookiebotDialogBodyButtonAccept');
+          console.log('[Login] Step 3b: Cookie consent accepted');
+        }
       } catch (error) {
-        console.log('No cookie consent dialog found');
+        console.log('[Login] Step 3c: No cookie consent dialog found or already accepted');
       }
 
-      // Log detailed page information
-      const pageInfo = await this.page.evaluate(() => {
-        return {
-          title: document.title,
-          url: window.location.href,
-          html: document.documentElement.outerHTML,
-          forms: Array.from(document.forms).map(form => ({
-            id: form.id,
-            action: form.action,
-            method: form.method,
-            elements: Array.from(form.elements).map(el => ({
-              tagName: el.tagName,
-              type: el.type,
-              id: el.id,
-              name: el.name,
-              class: el.className
-            }))
-          })),
-          scripts: Array.from(document.scripts)
-            .filter(s => s.src)
-            .map(s => s.src),
-          iframes: Array.from(document.querySelectorAll('iframe'))
-            .map(f => ({src: f.src, id: f.id}))
-        };
-      });
-      
-      console.log('Page Information:', JSON.stringify(pageInfo, null, 2));
-      
-      // Wait for login form with increased timeout
-      console.log('Waiting for login form...');
-      
-      // Wait for the login form to be ready
+      // Wait for the page to stabilize after cookie consent
+      await this.page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
+
+      // Ensure we're on the login page
+      const currentUrl = await this.page.url();
+      if (!currentUrl.includes('/login')) {
+        console.log('[Login] Step 4a: Not on login page, redirecting');
+        await this.page.goto('https://www.invaluable.com/login', {
+          waitUntil: 'networkidle0'
+        });
+      }
+
+      console.log('[Login] Step 5: Waiting for login form elements');
+      // Wait for the login form elements to be truly ready
       await this.page.waitForFunction(() => {
         const form = document.querySelector('#login-form');
-        const email = document.querySelector('#emailLoginPage');
-        const password = document.querySelector('#passwordLogin');
-        return form && email && password && 
-               window.getComputedStyle(form).display !== 'none' &&
-               window.getComputedStyle(email).display !== 'none';
+        if (!form || window.getComputedStyle(form).display === 'none') return false;
+        
+        // Ensure we're using the login form fields, not the new account form
+        const emailInput = form.querySelector('input[name="emailLogin"]');
+        const passwordInput = form.querySelector('input[name="password"]');
+        const submitButton = form.querySelector('#signInBtn');
+        
+        return emailInput && passwordInput && submitButton &&
+               window.getComputedStyle(emailInput).display !== 'none' &&
+               window.getComputedStyle(submitButton).display !== 'none';
+      }).then(() => {
+        console.log('[Login] Step 5a: Login form elements found and visible');
       }, { timeout: 30000 });
-      
-      console.log('Login form found');
-      
-      console.log('Entering credentials...');
-      await this.page.type('#emailLoginPage', email, { delay: 100 });
-      await this.page.type('#passwordLogin', password, { delay: 100 });
-      
-      // Small delay before clicking submit
-      await this.page.waitForTimeout(500);
-      
-      console.log('Submitting login form...');
+
+      console.log('[Login] Step 6: Clearing existing form values');
+      // Clear any existing values
+      await this.page.evaluate(() => {
+        const form = document.querySelector('#login-form');
+        const emailInput = form.querySelector('input[name="emailLogin"]');
+        const passwordInput = form.querySelector('input[name="password"]');
+        if (emailInput) emailInput.value = '';
+        if (passwordInput) passwordInput.value = '';
+      });
+
+      console.log('[Login] Step 7: Entering credentials');
+      // Type credentials with human-like delays
+      await this.page.type('input[name="emailLogin"]', email, { delay: 150 });
+      console.log('[Login] Step 7a: Email entered');
+      await this.page.evaluate(() => new Promise(r => setTimeout(r, 500)));
+      await this.page.type('input[name="password"]', password, { delay: 150 });
+      console.log('[Login] Step 7b: Password entered');
+      await this.page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
+
+      console.log('[Login] Step 8: Locating submit button');
+      // Make sure we're clicking the login form's submit button
+      const submitButton = await this.page.$('#login-form #signInBtn');
+      if (!submitButton) {
+        throw new Error('Login submit button not found');
+      }
+      console.log('[Login] Step 8a: Submit button found');
+
+      console.log('[Login] Step 9: Submitting form and waiting for navigation');
+      // Click the sign in button and wait for navigation
       await Promise.all([
-        this.page.waitForNavigation({ waitUntil: 'networkidle0' }),
-        this.page.click('#signInBtn')
+        this.page.waitForNavigation({
+          waitUntil: 'networkidle0',
+          timeout: 60000 
+        }),
+        submitButton.click()
       ]);
-      
-      // Verify login success
-      const loginError = await this.page.$('.error-message, #loginError:not([hidden]), .alert-danger');
-      if (loginError) {
-        const errorText = await this.page.evaluate(el => el.textContent, loginError);
-        throw new Error(`Login failed: ${errorText}`);
+
+      console.log('[Login] Step 10: Verifying login success');
+      // Verify login success by checking for account-specific elements
+      const isLoggedIn = await this.page.evaluate(() => {
+        return !document.querySelector('.error-message') && 
+               !document.querySelector('#loginError') &&
+               (document.querySelector('.account-menu') !== null ||
+                document.querySelector('.user-profile') !== null ||
+                document.querySelector('.logout-link') !== null);
+      });
+
+      if (!isLoggedIn) {
+        console.log('[Login] Step 10a: Login verification failed, checking for error messages');
+        // Get any error message
+        const errorMessage = await this.page.evaluate(() => {
+          const errorEl = document.querySelector('.error-message, #loginError, .alert-danger');
+          return errorEl ? errorEl.textContent.trim() : 'Login verification failed';
+        });
+        throw new Error(errorMessage);
       }
       
+      console.log('[Login] Step 10b: Login successful');
       this.isLoggedIn = true;
-      console.log('Successfully logged in to Invaluable');
-      
-      // Wait a moment for any post-login redirects
-      await this.page.waitForTimeout(2000);
       return true;
 
     } catch (error) {
-      console.error('Invaluable login error:', error.message);
+      console.error('[Login] Error during login process:', error.message);
       console.error('Current URL:', await this.page.url());
       
       // Take screenshot for debugging
@@ -227,7 +262,7 @@ class InvaluableScraper {
     });
     
     // Wait a bit for any lazy-loaded content
-    await this.page.waitForTimeout(2000);
+    await this.page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
   }
 
   async close() {
