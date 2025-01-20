@@ -46,14 +46,7 @@ class WorthpointScraper {
     this.browser = await puppeteer.launch({
       headless: 'new',
       ignoreHTTPSErrors: true,
-      ignoreHTTPSErrors: true,
       args: flags,
-      defaultViewport: {
-        width: 1920,
-        height: 1080,
-        deviceScaleFactor: 1,
-      }
-      // Block unnecessary resource types
       defaultViewport: {
         width: 1920,
         height: 1080,
