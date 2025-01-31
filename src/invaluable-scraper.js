@@ -1,6 +1,5 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { saveHtmlToFile } = require('./utils/drive-logger');
 const storage = require('./utils/storage');
 puppeteer.use(StealthPlugin());
 
@@ -22,20 +21,107 @@ class InvaluableScraper {
           '--disable-dev-shm-usage',
           '--disable-accelerated-2d-canvas',
           '--disable-gpu',
-          '--window-size=1920,1080'
+          '--window-size=1920,1080',
+          '--disable-infobars',
+          '--disable-notifications',
+          '--disable-extensions',
+          '--ignore-certificate-errors',
+          '--no-first-run',
+          '--disable-blink-features=AutomationControlled'
         ]
       });
       this.page = await this.browser.newPage();
-      await this.page.setViewport({ width: 1920, height: 1080 });
-      await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       
-      // Add stealth settings
+      // Set a more realistic viewport
+      await this.page.setViewport({ 
+        width: 1920, 
+        height: 1080,
+        deviceScaleFactor: 1,
+        hasTouch: false,
+        isLandscape: true,
+        isMobile: false
+      });
+
+      // Set more realistic user agent
+      await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+      // Add browser-like features
       await this.page.evaluateOnNewDocument(() => {
-        delete Object.getPrototypeOf(navigator).webdriver;
+        // Override navigator properties
+        Object.defineProperties(navigator, {
+          webdriver: { get: () => undefined },
+          languages: { get: () => ['en-US', 'en'] },
+          plugins: { get: () => [
+            {
+              0: { type: 'application/x-google-chrome-pdf' },
+              description: 'Portable Document Format',
+              filename: 'internal-pdf-viewer',
+              length: 1,
+              name: 'Chrome PDF Plugin'
+            }
+          ]},
+          // Add hardware concurrency
+          hardwareConcurrency: { get: () => 8 },
+          // Add device memory
+          deviceMemory: { get: () => 8 },
+          // Add connection info
+          connection: { get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+          })}
+        });
+
+        // Add WebGL support
+        const getParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+          // Spoof renderer info
+          if (parameter === 37445) {
+            return 'Intel Inc.';
+          }
+          if (parameter === 37446) {
+            return 'Intel(R) Iris(TM) Graphics 6100';
+          }
+          return getParameter.apply(this, arguments);
+        };
+
+        // Add chrome object
         window.chrome = {
           runtime: {},
           loadTimes: () => {},
+          csi: () => {},
+          app: {
+            isInstalled: false,
+            getDetails: () => {},
+            getIsInstalled: () => false,
+            runningState: () => 'normal'
+          }
         };
+
+        // Add permissions API
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+          parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+        );
+      });
+
+      // Set extra headers
+      await this.page.setExtraHTTPHeaders({
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"'
       });
     }
   }
@@ -55,11 +141,11 @@ class InvaluableScraper {
       
       console.log('[Login] Step 2: Waiting for initial page load');
       // Wait for scripts to load
-      await this.page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+      await this.page.waitForTimeout(2000);
 
       // Save initial page HTML
       const initialHtml = await this.page.content();
-      saveHtmlToFile(initialHtml, 'invaluable-login');
+      await saveHtmlToFile(initialHtml, 'invaluable-login');
       
       console.log('[Login] Step 3: Checking for cookie consent dialog');
       // Handle cookie consent if present
@@ -75,8 +161,15 @@ class InvaluableScraper {
         console.log('[Login] Step 3c: No cookie consent dialog found or already accepted');
       }
 
+      // Add random mouse movements
+      await this.page.mouse.move(
+        200 + Math.random() * 100,
+        150 + Math.random() * 100,
+        { steps: 10 }
+      );
+
       // Wait for the page to stabilize after cookie consent
-      await this.page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
+      await this.page.waitForTimeout(1000);
 
       // Ensure we're on the login page
       const currentUrl = await this.page.url();
@@ -101,9 +194,9 @@ class InvaluableScraper {
         return emailInput && passwordInput && submitButton &&
                window.getComputedStyle(emailInput).display !== 'none' &&
                window.getComputedStyle(submitButton).display !== 'none';
-      }).then(() => {
+      }, { timeout: 30000 }).then(() => {
         console.log('[Login] Step 5a: Login form elements found and visible');
-      }, { timeout: 30000 });
+      });
 
       console.log('[Login] Step 6: Clearing existing form values');
       // Clear any existing values
@@ -115,14 +208,30 @@ class InvaluableScraper {
         if (passwordInput) passwordInput.value = '';
       });
 
+      // Add some natural scrolling
+      await this.page.evaluate(() => {
+        window.scrollBy({
+          top: 100,
+          behavior: 'smooth'
+        });
+      });
+      await this.page.waitForTimeout(500);
+
       console.log('[Login] Step 7: Entering credentials');
       // Type credentials with human-like delays
       await this.page.type('input[name="emailLogin"]', email, { delay: 150 });
       console.log('[Login] Step 7a: Email entered');
-      await this.page.evaluate(() => new Promise(r => setTimeout(r, 500)));
+      await this.page.waitForTimeout(500);
       await this.page.type('input[name="password"]', password, { delay: 150 });
       console.log('[Login] Step 7b: Password entered');
-      await this.page.evaluate(() => new Promise(r => setTimeout(r, 1000)));
+      await this.page.waitForTimeout(1000);
+
+      // Move mouse to submit button area
+      await this.page.mouse.move(
+        300 + Math.random() * 50,
+        400 + Math.random() * 50,
+        { steps: 10 }
+      );
 
       console.log('[Login] Step 8: Locating submit button');
       // Get the form and button
@@ -177,6 +286,18 @@ class InvaluableScraper {
           const errorEl = document.querySelector('.error-message, #loginError, .alert-danger');
           return errorEl ? errorEl.textContent.trim() : 'Login verification failed';
         });
+
+        // Take screenshot and save to Cloud Storage
+        const screenshot = await this.page.screenshot();
+        const url = await storage.saveScreenshot(screenshot, 'invaluable-login-error');
+        if (url) {
+          console.log('[Login] Error screenshot saved:', url);
+        }
+
+        // Save the error page HTML
+        const errorHtml = await this.page.content();
+        await saveHtmlToFile(errorHtml, 'invaluable-login-error');
+        
         throw new Error(errorMessage);
       }
       
@@ -288,7 +409,7 @@ class InvaluableScraper {
     });
     
     // Wait a bit for any lazy-loaded content
-    await this.page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+    await this.page.waitForTimeout(2000);
   }
 
   async close() {
