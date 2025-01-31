@@ -69,8 +69,8 @@ app.get('/api/invaluable', async (req, res) => {
       await initializeScraper();
     }
 
-    const { query = 'picasso', keyword = 'picasso' } = req.query;
-    console.log(`Fetching Invaluable data for query: ${query}, keyword: ${keyword}...`);
+    const { query = 'fine art', keyword = 'fine art' } = req.query;
+    console.log('Fetching Invaluable Fine Art data...');
     
     // Essential auth cookies
     const cookies = [
@@ -96,7 +96,7 @@ app.get('/api/invaluable', async (req, res) => {
       }
     ];
 
-    const searchUrl = `https://www.invaluable.com/search?upcoming=false&query=${query}&keyword=${keyword}`;
+    const searchUrl = 'https://www.invaluable.com/search?priceResult[min]=250&dateTimeUTCUnix[min]=1577833200&dateType=Custom&upcoming=false&sort=auctionDateAsc&query=fine%20art&keyword=fine%20art';
     const html = await invaluableScraper.searchWithCookies(searchUrl, cookies);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -111,7 +111,11 @@ app.get('/api/invaluable', async (req, res) => {
       searchParams: {
         upcoming: false,
         query,
-        keyword
+        keyword: 'fine art',
+        priceResult: { min: 250 },
+        dateTimeUTCUnix: { min: 1577833200 }, // Jan 1, 2020
+        dateType: 'Custom',
+        sort: 'auctionDateAsc'
       },
       cookies: cookies.map(({ name, domain }) => ({ name, domain })), // Exclude cookie values for security
       status: 'pending_processing'
