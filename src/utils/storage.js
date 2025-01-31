@@ -3,7 +3,7 @@ const { Storage } = require('@google-cloud/storage');
 class CloudStorage {
   constructor() {
     this.storage = new Storage();
-    this.bucketName = 'art-market-data';
+    this.bucketName = 'invaluable-html-archive';
     this.initialized = false;
   }
 
