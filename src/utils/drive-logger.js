@@ -1,31 +1,21 @@
-// Simple file logger that writes to disk instead of Google Drive
-const fs = require('fs');
-const path = require('path');
+const storage = require('./storage');
 
-function saveHtmlToFile(html, prefix) {
+async function saveHtmlToFile(html, prefix) {
   try {
-    // Create logs directory if it doesn't exist
-    const logsDir = path.join(process.cwd(), 'logs');
-    if (!fs.existsSync(logsDir)) {
-      fs.mkdirSync(logsDir, { recursive: true });
+    const url = await storage.saveHtml(html, prefix);
+    if (url) {
+      console.log(`[Logger] Successfully saved ${prefix} HTML to: ${url}`);
+      return url;
     }
-
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `${prefix}-${timestamp}.html`;
-    const filePath = path.join(logsDir, filename);
-
-    // Write the file
-    fs.writeFileSync(filePath, html);
-    console.log(`[Logger] Successfully saved ${filename}`);
-    return filePath;
-  } catch (error) {
-    console.error('[Logger] Error saving file:', error);
     
     // Log the HTML to console as fallback
     console.log('\n[Logger] HTML Content (fallback):\n');
-    console.log(html);
+    console.log(html.substring(0, 1000));
     console.log('\n----------------------------------------\n');
     
+    return null;
+  } catch (error) {
+    console.error('[Logger] Error saving HTML:', error);
     return null;
   }
 }

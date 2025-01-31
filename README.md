@@ -2,6 +2,13 @@
 
 A comprehensive Node.js web scraper for extracting fine art sales data from multiple sources including Worthpoint, Christie's, and Invaluable. Built with Puppeteer, Express, and advanced anti-detection measures.
 
+## Live API
+
+The scraper API is available at:
+```
+https://scrapper-856401495068.us-central1.run.app
+```
+
 ## Features
 
 ### Multi-Source Data Collection
@@ -109,7 +116,6 @@ Query Parameters:
 - Same as browser endpoint
 - Additional support for price distribution analysis
 
-Returns fine art sales data fetched directly from Worthpoint's API.
 Returns fine art sales data fetched directly from Worthpoint's API.
 
 ### Christie's Auctions
@@ -236,5 +242,3 @@ The project is actively maintained and includes:
 ## License
 
 MIT License
-
-## Support

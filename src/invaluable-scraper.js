@@ -1,6 +1,7 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { saveHtmlToFile } = require('./utils/drive-logger');
+const storage = require('./utils/storage');
 puppeteer.use(StealthPlugin());
 
 class InvaluableScraper {
@@ -187,10 +188,13 @@ class InvaluableScraper {
       console.error('[Login] Error during login process:', error.message);
       console.error('Current URL:', await this.page.url());
       
-      // Take screenshot for debugging
+      // Take screenshot and save to Cloud Storage
       try {
-        await this.page.screenshot({ path: '/tmp/invaluable-login-error.png' });
-        console.log('[Login] Error screenshot saved to /tmp/invaluable-login-error.png');
+        const screenshot = await this.page.screenshot();
+        const url = await storage.saveScreenshot(screenshot, 'invaluable-login-error');
+        if (url) {
+          console.log('[Login] Error screenshot saved:', url);
+        }
         
         // Log the current page content
         const content = await this.page.content();
