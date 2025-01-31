@@ -1,6 +1,6 @@
-# Art Market Data Scraper
+# Invaluable Art Market Scraper
 
-A comprehensive Node.js web scraper for extracting fine art sales data from multiple sources including Worthpoint, Christie's, and Invaluable. Built with Puppeteer, Express, and advanced anti-detection measures.
+A specialized Node.js web scraper for extracting art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
 
 ## Live API
 
@@ -11,28 +11,13 @@ https://scrapper-856401495068.us-central1.run.app
 
 ## Features
 
-### Multi-Source Data Collection
-- **Worthpoint.com**
-  - Browser-based scraping with anti-detection
-  - Direct API integration with CSRF handling
-  - Historical sales data
-  - Price trends
-  - Automated login with protection bypass
-  
-- **Christie's**
-  - Auction results
-  - Lot details
-  - Sale totals
-  - Upcoming auctions
-  - Dynamic content handling
-  
-- **Invaluable**
-  - Real-time auction data
-  - Price estimates
-  - Auction house information
-  - Lot details
-  - Cookie consent handling
-  - Automated login
+### Invaluable Data Collection
+- Real-time auction data extraction
+- Price estimates and current bids
+- Auction house information
+- Lot details
+- Cookie consent handling
+- Protection bypass mechanisms
 
 ### Technical Features
 - **Advanced Browser Automation**
@@ -43,7 +28,6 @@ https://scrapper-856401495068.us-central1.run.app
   - Protection bypass mechanisms
 
 - **Security & Reliability**
-  - CSRF token handling
   - Cookie management
   - Rate limiting and retry logic
   - Comprehensive error handling
@@ -59,7 +43,6 @@ https://scrapper-856401495068.us-central1.run.app
   - Docker containerization
   - Google Cloud Run deployment
   - Environment variable management
-  - Secret management
 
 ## Prerequisites
 
@@ -73,7 +56,7 @@ https://scrapper-856401495068.us-central1.run.app
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd art-market-scraper
+cd invaluable-scraper
 ```
 
 2. Install dependencies:
@@ -81,59 +64,12 @@ cd art-market-scraper
 npm install
 ```
 
-3. Create a `.env` file in the root directory with your credentials:
+3. Start the development server:
+```bash
+npm start
 ```
-WORTHPOINT_USERNAME=your_username
-WORTHPOINT_PASSWORD=your_password
-PORT=3000
-NODE_ENV=development
-GOOGLE_CLOUD_PROJECT=your-project-id
-```
-
-4. Set up Google Cloud Secret Manager:
-- Create secrets for `worthpoint-username` and `worthpoint-password`
-- Ensure the service account has access to these secrets
-- The application will automatically fetch credentials from Secret Manager
 
 ## API Endpoints
-
-### Worthpoint Browser Scraping
-```
-GET /api/art/browser
-```
-Query Parameters:
-- `max` (optional): Maximum results to return (default: 100)
-- `sort` (optional): Sort order (default: SaleDate)
-- `rMin` (optional): Minimum price (default: 200)
-
-Returns fine art sales data scraped using browser automation.
-
-### Worthpoint API
-```
-GET /api/art/api
-```
-Query Parameters:
-- Same as browser endpoint
-- Additional support for price distribution analysis
-
-Returns fine art sales data fetched directly from Worthpoint's API.
-
-### Christie's Auctions
-```
-GET /api/christies
-```
-Query Parameters:
-- `month` (optional): Filter by month (1-12)
-- `year` (optional): Filter by year (e.g., 2024)
-- `page` (optional): Page number for pagination (default: 1)
-- `pageSize` (optional): Results per page (default: 60)
-
-### Christie's Lot Details
-```
-GET /api/christies/lot/:lotId
-```
-Returns detailed information about a specific auction lot.
-
 
 ### Invaluable Search
 ```
@@ -145,7 +81,15 @@ Query Parameters:
 - `upcoming` (optional): Include upcoming auctions (default: false)
 - `query` (optional): Main search query
 - `keyword` (optional): Additional keyword filters
+
 Returns auction data from Invaluable with detailed lot information.
+
+### Specialized Picasso Search
+```
+GET /api/invaluable/search-picasso
+```
+Performs a specialized search for Picasso works using authenticated cookies.
+Returns a URL to the saved HTML content in Google Cloud Storage.
 
 ## Development
 
@@ -153,23 +97,21 @@ Start the development server:
 ```bash
 npm run dev
 ```
-The server includes hot reloading for development.
 
-The server will start on port 3000 (or the port specified in your .env file).
+The server will start on port 8080 (or the port specified in your environment).
 
 ## Docker Deployment
 
 Build the Docker image:
 ```bash
-docker build -t art-market-scraper .
-docker tag art-market-scraper gcr.io/$PROJECT_ID/worthpoint-scraper
+docker build -t invaluable-scraper .
+docker tag invaluable-scraper gcr.io/$PROJECT_ID/worthpoint-scraper
 ```
 
 Run the container:
 ```bash
-docker run -p 3000:3000 --env-file .env art-market-scraper
+docker run -p 8080:8080 invaluable-scraper
 ```
-The container includes all necessary Chrome dependencies.
 
 ## Google Cloud Run Deployment
 
@@ -178,36 +120,25 @@ Deploy to Cloud Run:
 gcloud builds submit --config cloudbuild.yaml
 ```
 
-The deployment includes automatic environment variable configuration
-and secret management.
-
 ## Project Structure
 
 ```
 ├── src/
-│   ├── server.js           # Express server and API routes
-│   ├── scraper.js          # Worthpoint browser scraper
-│   ├── api-scraper.js      # Worthpoint API client
-│   ├── christies-scraper.js# Christie's scraper
-│   ├── invaluable-scraper.js# Invaluable scraper
-│   └── secrets.js          # Secrets management
-├── Dockerfile              # Docker configuration
-├── .dockerignore          # Docker ignore rules
-├── .env                   # Environment variables
-├── cloudbuild.yaml         # Cloud Build configuration
-├── package.json            # Project dependencies
-└── README.md              # Documentation
+│   ├── server.js                 # Express server and API routes
+│   ├── scrapers/
+│   │   └── invaluable/
+│   │       ├── index.js         # Main scraper export
+│   │       ├── browser.js       # Browser management
+│   │       ├── auth.js          # Authentication handling
+│   │       ├── search.js        # Search functionality
+│   │       └── utils.js         # Utility functions
+│   └── utils/
+│       ├── storage.js           # Google Cloud Storage
+│       └── drive-logger.js      # HTML logging
+├── Dockerfile                    # Docker configuration
+├── cloudbuild.yaml              # Cloud Build configuration
+└── package.json                 # Project dependencies
 ```
-
-## Security Notes
-
-- Credentials are managed through Google Cloud Secret Manager
-- All external requests use HTTPS
-- Comprehensive rate limiting
-- Advanced anti-bot detection measures
-- Protection bypass mechanisms
-- Secure cookie handling
-- No sensitive data logging
 
 ## Error Handling
 
@@ -223,12 +154,10 @@ The API implements comprehensive error handling:
 ## Current Status
 
 The project is actively maintained and includes:
-- ✅ Worthpoint integration (both browser and API)
-- ✅ Christie's auction data scraping
 - ✅ Invaluable integration
+- ✅ Protection bypass
 - ✅ Containerized deployment
 - ✅ Cloud Run hosting
-- ✅ Protection bypass
 - ✅ Automated builds
 
 ## Contributing
