@@ -3,7 +3,7 @@ const { Storage } = require('@google-cloud/storage');
 class CloudStorage {
   constructor() {
     this.storage = new Storage();
-    this.bucketName = 'images_free_reports';
+    this.bucketName = 'art-market-data';
     this.initialized = false;
   }
 
@@ -22,55 +22,53 @@ class CloudStorage {
     }
   }
 
-  async saveScreenshot(buffer, prefix) {
+  async saveSearchData(html, metadata) {
     try {
       if (!this.initialized) {
         await this.initialize();
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `scrapper/screenshots/${prefix}-${timestamp}.png`;
+      const baseFolder = 'Fine Art';
+      const searchId = `${metadata.source}-${metadata.query}-${timestamp}`;
       
-      const file = this.storage.bucket(this.bucketName).file(filename);
-      await file.save(buffer);
+      // Save HTML file
+      const htmlFilename = `${baseFolder}/html/${searchId}.html`;
+      const htmlFile = this.storage.bucket(this.bucketName).file(htmlFilename);
+      await htmlFile.save(html);
       
-      const [url] = await file.getSignedUrl({
+      // Save metadata file
+      const metadataFilename = `${baseFolder}/metadata/${searchId}.json`;
+      const metadataFile = this.storage.bucket(this.bucketName).file(metadataFilename);
+      await metadataFile.save(JSON.stringify(metadata, null, 2));
+      
+      // Get signed URLs for both files
+      const [htmlUrl] = await htmlFile.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+      
+      const [metadataUrl] = await metadataFile.getSignedUrl({
         version: 'v4',
         action: 'read',
         expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
-      console.log(`[Storage] Screenshot saved: ${url}`);
-      return url;
-    } catch (error) {
-      console.error('[Storage] Error saving screenshot:', error);
-      return null;
-    }
-  }
-
-  async saveHtml(html, prefix) {
-    try {
-      if (!this.initialized) {
-        await this.initialize();
-      }
-
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `scrapper/html/${prefix}-${timestamp}.html`;
+      console.log(`[Storage] Files saved successfully:
+        HTML: ${htmlUrl}
+        Metadata: ${metadataUrl}`);
       
-      const file = this.storage.bucket(this.bucketName).file(filename);
-      await file.save(html);
-      
-      const [url] = await file.getSignedUrl({
-        version: 'v4',
-        action: 'read',
-        expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
-
-      console.log(`[Storage] HTML saved: ${url}`);
-      return url;
+      return {
+        searchId,
+        htmlUrl,
+        metadataUrl,
+        htmlPath: htmlFilename,
+        metadataPath: metadataFilename
+      };
     } catch (error) {
-      console.error('[Storage] Error saving HTML:', error);
-      return null;
+      console.error('[Storage] Error saving search data:', error);
+      throw error;
     }
   }
 }

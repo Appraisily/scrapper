@@ -69,36 +69,8 @@ app.get('/api/invaluable', async (req, res) => {
       await initializeScraper();
     }
 
-    const { currency, minPrice, upcoming, query, keyword } = req.query;
-    console.log('Fetching Invaluable auction data...');
-    
-    const searchResults = await invaluableScraper.searchItems({
-      currency,
-      minPrice,
-      upcoming: upcoming === 'true',
-      query,
-      keyword
-    });
-    
-    res.json({
-      total: searchResults.length,
-      data: searchResults,
-      source: 'invaluable'
-    });
-  } catch (error) {
-    console.error('Invaluable scraping error:', error);
-    res.status(500).json({ error: 'Failed to fetch Invaluable auction data' });
-  }
-});
-
-// Invaluable Search with Cookies
-app.get('/api/invaluable/search-picasso', async (req, res) => {
-  try {
-    if (!invaluableScraper) {
-      await initializeScraper();
-    }
-
-    console.log('Injecting cookies and fetching Picasso search results...');
+    const { query = 'picasso', keyword = 'picasso' } = req.query;
+    console.log(`Fetching Invaluable data for query: ${query}, keyword: ${keyword}...`);
     
     // Essential auth cookies
     const cookies = [
@@ -124,22 +96,47 @@ app.get('/api/invaluable/search-picasso', async (req, res) => {
       }
     ];
 
-    const html = await invaluableScraper.searchWithCookies(
-      'https://www.invaluable.com/search?upcoming=false&query=picasso&keyword=picasso',
-      cookies
-    );
+    const searchUrl = `https://www.invaluable.com/search?upcoming=false&query=${query}&keyword=${keyword}`;
+    const html = await invaluableScraper.searchWithCookies(searchUrl, cookies);
 
-    // Save HTML to Cloud Storage
-    const url = await storage.saveHtml(html, 'invaluable-picasso-search');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    
+    // Prepare metadata
+    const metadata = {
+      source: 'invaluable',
+      query,
+      keyword,
+      timestamp,
+      searchUrl,
+      searchParams: {
+        upcoming: false,
+        query,
+        keyword
+      },
+      cookies: cookies.map(({ name, domain }) => ({ name, domain })), // Exclude cookie values for security
+      status: 'pending_processing'
+    };
+
+    // Save both HTML and metadata
+    const result = await storage.saveSearchData(html, metadata);
     
     res.json({
       success: true,
       message: 'Search results saved successfully',
-      url: url
+      searchId: result.searchId,
+      files: {
+        html: result.htmlPath,
+        metadata: result.metadataPath
+      },
+      urls: {
+        html: result.htmlUrl,
+        metadata: result.metadataUrl
+      },
+      metadata
     });
   } catch (error) {
-    console.error('Invaluable Picasso search error:', error);
-    res.status(500).json({ error: 'Failed to fetch Picasso search results' });
+    console.error('Invaluable search error:', error);
+    res.status(500).json({ error: 'Failed to fetch search results' });
   }
 });
 

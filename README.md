@@ -1,23 +1,15 @@
 # Invaluable Art Market Scraper
 
-A specialized Node.js web scraper for extracting art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
-
-## Live API
-
-The scraper API is available at:
-```
-https://scrapper-856401495068.us-central1.run.app
-```
+A specialized Node.js web scraper for extracting fine art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
 
 ## Features
 
-### Invaluable Data Collection
+### Data Collection
 - Real-time auction data extraction
-- Price estimates and current bids
-- Auction house information
-- Lot details
-- Cookie consent handling
+- HTML content storage in Google Cloud Storage
+- Structured metadata storage
 - Protection bypass mechanisms
+- Cookie-based authentication
 
 ### Technical Features
 - **Advanced Browser Automation**
@@ -27,11 +19,12 @@ https://scrapper-856401495068.us-central1.run.app
   - Network condition emulation
   - Protection bypass mechanisms
 
-- **Security & Reliability**
-  - Cookie management
-  - Rate limiting and retry logic
-  - Comprehensive error handling
-  - Detailed logging
+- **Cloud Storage Integration**
+  - Organized folder structure for Fine Art data
+  - HTML content storage
+  - JSON metadata storage
+  - Signed URLs for file access
+  - Timestamped file organization
 
 - **API Features**
   - RESTful endpoints
@@ -50,6 +43,7 @@ https://scrapper-856401495068.us-central1.run.app
 - npm
 - Docker (for containerized deployment)
 - Google Cloud SDK (for deployment)
+- Access to Google Cloud Storage bucket
 
 ## Installation
 
@@ -69,36 +63,65 @@ npm install
 npm start
 ```
 
-## API Endpoints
+The server will start on port 8080 (or the port specified in your environment).
+
+## API Endpoint
 
 ### Invaluable Search
 ```
 GET /api/invaluable
 ```
 Query Parameters:
-- `currency` (optional): Currency code (default: USD)
-- `minPrice` (optional): Minimum price filter (default: 250)
-- `upcoming` (optional): Include upcoming auctions (default: false)
-- `query` (optional): Main search query
-- `keyword` (optional): Additional keyword filters
+- `query` (optional): Main search query (default: "picasso")
+- `keyword` (optional): Additional keyword filter (default: "picasso")
 
-Returns auction data from Invaluable with detailed lot information.
+Returns:
+```json
+{
+  "success": true,
+  "message": "Search results saved successfully",
+  "searchId": "invaluable-picasso-2024-01-15T10-30-00Z",
+  "files": {
+    "html": "Fine Art/html/invaluable-picasso-2024-01-15T10-30-00Z.html",
+    "metadata": "Fine Art/metadata/invaluable-picasso-2024-01-15T10-30-00Z.json"
+  },
+  "urls": {
+    "html": "https://storage.googleapis.com/...",
+    "metadata": "https://storage.googleapis.com/..."
+  },
+  "metadata": {
+    "source": "invaluable",
+    "query": "picasso",
+    "keyword": "picasso",
+    "timestamp": "2024-01-15T10:30:00Z",
+    "searchUrl": "https://www.invaluable.com/search?...",
+    "searchParams": {
+      "upcoming": false,
+      "query": "picasso",
+      "keyword": "picasso"
+    },
+    "status": "pending_processing"
+  }
+}
+```
 
-### Specialized Picasso Search
+## Storage Structure
+
 ```
-GET /api/invaluable/search-picasso
+art-market-data/
+└── Fine Art/
+    ├── html/
+    │   └── invaluable-{query}-{timestamp}.html
+    └── metadata/
+        └── invaluable-{query}-{timestamp}.json
 ```
-Performs a specialized search for Picasso works using authenticated cookies.
-Returns a URL to the saved HTML content in Google Cloud Storage.
 
 ## Development
 
 Start the development server:
 ```bash
-npm run dev
+npm start
 ```
-
-The server will start on port 8080 (or the port specified in your environment).
 
 ## Docker Deployment
 
@@ -133,8 +156,7 @@ gcloud builds submit --config cloudbuild.yaml
 │   │       ├── search.js        # Search functionality
 │   │       └── utils.js         # Utility functions
 │   └── utils/
-│       ├── storage.js           # Google Cloud Storage
-│       └── drive-logger.js      # HTML logging
+│       └── storage.js           # Google Cloud Storage integration
 ├── Dockerfile                    # Docker configuration
 ├── cloudbuild.yaml              # Cloud Build configuration
 └── package.json                 # Project dependencies
@@ -144,10 +166,9 @@ gcloud builds submit --config cloudbuild.yaml
 
 The API implements comprehensive error handling:
 - Network errors
-- Authentication failures
+- Storage errors
 - Rate limiting
 - Invalid parameters
-- CAPTCHA detection
 - Protection challenges
 - Scraping failures
 
@@ -156,6 +177,7 @@ The API implements comprehensive error handling:
 The project is actively maintained and includes:
 - ✅ Invaluable integration
 - ✅ Protection bypass
+- ✅ Cloud Storage integration
 - ✅ Containerized deployment
 - ✅ Cloud Run hosting
 - ✅ Automated builds
