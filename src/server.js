@@ -1,48 +1,28 @@
 const express = require('express');
 const cors = require('cors');
 const InvaluableScraper = require('./scrapers/invaluable');
-const ChristiesScraper = require('./scrapers/christies');
-const { WorthpointScraper } = require('./scrapers/worthpoint');
-const { WorthpointApiScraper } = require('./scrapers/worthpoint/api');
-const { getCredentials } = require('./utils/secrets');
 const storage = require('./utils/storage');
 
 // Configure port from environment variable with fallback
-// Cloud Run provides PORT environment variable
 const port = process.env.PORT || 8080;
 console.log(`Starting server with port: ${port}`);
 
 const app = express();
 
-// Scraper instances
-const scrapers = {
-  browser: null,
-  api: null,
-  christies: null,
-  invaluable: null
-};
-
-// Initialization flags
-const initFlags = {
-  browser: false,
-  api: false
-};
+// Scraper instance
+let invaluableScraper = null;
+let initializingInvaluable = false;
 
 // Graceful shutdown handler
 async function shutdown() {
   console.log('Shutting down gracefully...');
-  
-  // Close all scraper instances
-  for (const scraper of Object.values(scrapers)) {
-    if (scraper) {
-      try {
-        await scraper.close();
-      } catch (error) {
-        console.error('Error closing scraper:', error);
-      }
+  if (invaluableScraper) {
+    try {
+      await invaluableScraper.close();
+    } catch (error) {
+      console.error('Error closing scraper:', error);
     }
   }
-  
   process.exit(0);
 }
 
@@ -52,161 +32,47 @@ process.on('SIGINT', shutdown);
 
 // Add health check endpoint
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'Art Market Data Scraper API is running' });
+  res.json({ status: 'ok', message: 'Invaluable Scraper API is running' });
 });
 
 app.use(cors());
 app.use(express.json());
 
-// Initialize scrapers
-async function initializeScraper(type) {
-  if (initFlags[type]) {
-    while (initFlags[type]) {
+// Initialize scraper
+async function initializeScraper() {
+  if (initializingInvaluable) {
+    while (initializingInvaluable) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return;
   }
 
-  initFlags[type] = true;
-  console.log(`Starting ${type} scraper initialization...`);
+  initializingInvaluable = true;
+  console.log('Starting Invaluable scraper initialization...');
 
   try {
-    const credentials = await getCredentials();
-
-    switch (type) {
-      case 'browser':
-        scrapers.browser = new WorthpointScraper();
-        await scrapers.browser.initialize();
-        await scrapers.browser.login(credentials.username, credentials.password);
-        break;
-
-      case 'api':
-        scrapers.api = new WorthpointApiScraper();
-        await scrapers.api.login(credentials.username, credentials.password);
-        break;
-
-      case 'christies':
-        scrapers.christies = new ChristiesScraper();
-        await scrapers.christies.initialize();
-        break;
-
-      case 'invaluable':
-        scrapers.invaluable = new InvaluableScraper();
-        await scrapers.invaluable.initialize();
-        break;
-    }
-
-    console.log(`${type} scraper initialized successfully`);
+    invaluableScraper = new InvaluableScraper();
+    await invaluableScraper.initialize();
+    console.log('Invaluable scraper initialized successfully');
   } catch (error) {
-    console.error(`Error initializing ${type} scraper:`, error);
+    console.error('Error initializing Invaluable scraper:', error);
     throw error;
   } finally {
-    initFlags[type] = false;
+    initializingInvaluable = false;
   }
 }
-
-// API Routes
-
-// Worthpoint Browser Scraping
-app.get('/api/art/browser', async (req, res) => {
-  try {
-    if (!scrapers.browser) {
-      await initializeScraper('browser');
-    }
-
-    console.log('Fetching art data using browser scraping...');
-    const searchUrl = 'https://www.worthpoint.com/inventory/search?searchForm=search&ignoreSavedPreferences=true&max=100&sort=SaleDate&_img=false&img=true&_noGreyList=false&noGreyList=true&categories=fine-art&rMin=200&saleDate=ALL_TIME';
-    const searchResults = await scrapers.browser.scrapeSearchResults(searchUrl);
-    
-    res.json({
-      total: searchResults.length,
-      data: searchResults,
-      method: 'browser'
-    });
-  } catch (error) {
-    console.error('Browser scraping error:', error);
-    res.status(500).json({ error: 'Failed to fetch art data using browser scraping' });
-  }
-});
-
-// Worthpoint API
-app.get('/api/art/api', async (req, res) => {
-  try {
-    if (!scrapers.api) {
-      await initializeScraper('api');
-    }
-
-    console.log('Fetching art data using API...');
-    const searchResults = await scrapers.api.searchItems();
-    
-    res.json({
-      total: searchResults.length,
-      data: searchResults,
-      method: 'api'
-    });
-  } catch (error) {
-    console.error('API scraping error:', error);
-    res.status(500).json({ error: 'Failed to fetch art data using API' });
-  }
-});
-
-// Christie's Auctions
-app.get('/api/christies', async (req, res) => {
-  try {
-    if (!scrapers.christies) {
-      await initializeScraper('christies');
-    }
-
-    const { month, year, page, pageSize } = req.query;
-    console.log('Fetching Christie\'s auction data...');
-    
-    const searchResults = await scrapers.christies.searchAuctions({
-      month: parseInt(month) || undefined,
-      year: parseInt(year) || undefined,
-      page: parseInt(page) || 1,
-      pageSize: parseInt(pageSize) || 60
-    });
-    
-    res.json({
-      total: searchResults.length,
-      data: searchResults,
-      source: 'christies'
-    });
-  } catch (error) {
-    console.error('Christie\'s scraping error:', error);
-    res.status(500).json({ error: 'Failed to fetch Christie\'s auction data' });
-  }
-});
-
-// Christie's Lot Details
-app.get('/api/christies/lot/:lotId', async (req, res) => {
-  try {
-    if (!scrapers.christies) {
-      await initializeScraper('christies');
-    }
-
-    const { lotId } = req.params;
-    console.log(`Fetching Christie's lot details for ID: ${lotId}`);
-    
-    const lotDetails = await scrapers.christies.getLotDetails(lotId);
-    res.json(lotDetails);
-  } catch (error) {
-    console.error('Christie\'s lot details error:', error);
-    res.status(500).json({ error: 'Failed to fetch Christie\'s lot details' });
-  }
-});
 
 // Invaluable Search
 app.get('/api/invaluable', async (req, res) => {
   try {
-    if (!scrapers.invaluable) {
-      await initializeScraper('invaluable');
+    if (!invaluableScraper) {
+      await initializeScraper();
     }
 
     const { currency, minPrice, upcoming, query, keyword } = req.query;
     console.log('Fetching Invaluable auction data...');
     
-    const searchResults = await scrapers.invaluable.searchItems({
+    const searchResults = await invaluableScraper.searchItems({
       currency,
       minPrice,
       upcoming: upcoming === 'true',
@@ -228,8 +94,8 @@ app.get('/api/invaluable', async (req, res) => {
 // Invaluable Search with Cookies
 app.get('/api/invaluable/search-picasso', async (req, res) => {
   try {
-    if (!scrapers.invaluable) {
-      await initializeScraper('invaluable');
+    if (!invaluableScraper) {
+      await initializeScraper();
     }
 
     console.log('Injecting cookies and fetching Picasso search results...');
@@ -258,7 +124,7 @@ app.get('/api/invaluable/search-picasso', async (req, res) => {
       }
     ];
 
-    const html = await scrapers.invaluable.searchWithCookies(
+    const html = await invaluableScraper.searchWithCookies(
       'https://www.invaluable.com/search?upcoming=false&query=picasso&keyword=picasso',
       cookies
     );
