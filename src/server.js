@@ -8,7 +8,8 @@ const { getCredentials } = require('./utils/secrets');
 const storage = require('./utils/storage');
 
 // Configure port from environment variable with fallback
-const port = process.env.PORT || 3000;
+// Cloud Run provides PORT environment variable
+const port = process.env.PORT || 8080;
 console.log(`Starting server with port: ${port}`);
 
 const app = express();
@@ -48,6 +49,11 @@ async function shutdown() {
 // Handle shutdown signals
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+
+// Add health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Art Market Data Scraper API is running' });
+});
 
 app.use(cors());
 app.use(express.json());
@@ -272,8 +278,14 @@ app.get('/api/invaluable/search-picasso', async (req, res) => {
 });
 
 // Start the server
-app.listen(port, () => {
+const server = app.listen(port, '0.0.0.0', () => {
   console.log(`Server is now listening on port ${port}`);
   console.log('Environment:', process.env.NODE_ENV);
   console.log('Google Cloud Project:', process.env.GOOGLE_CLOUD_PROJECT);
+});
+
+// Add error handler
+server.on('error', (error) => {
+  console.error('Server error:', error);
+  process.exit(1);
 });
