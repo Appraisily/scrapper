@@ -148,7 +148,7 @@ class SearchManager {
       });
       
       // Wait a bit longer to catch API responses
-      await page.waitForTimeout(5000);
+      await page.evaluate(() => new Promise(r => setTimeout(r, 5000)));
       
       // If we found an API endpoint and response, use that
       if (apiResponse) {
@@ -224,7 +224,7 @@ class SearchManager {
       }, { timeout: constants.defaultTimeout });
       
       // Wait a bit for any animations to complete
-      await page.waitForTimeout(2000);
+      await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
       
       // Get updated HTML with second batch
       console.log('Saving second batch of results...');
