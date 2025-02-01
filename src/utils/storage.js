@@ -28,8 +28,9 @@ class CloudStorage {
         await this.initialize();
       }
 
-      // Parse the HTML data if it's a JSON string
-      let parsedData, apiData;
+      let parsedData = null;
+      let apiData = null;
+
       try {
         parsedData = JSON.parse(html);
         if (parsedData.apiRequests) {
@@ -39,15 +40,6 @@ class CloudStorage {
             apiResponse: parsedData.apiResponse
           };
         }
-      } catch (e) {
-        // If not JSON, treat as single HTML batch
-        parsedData = { initialBatch: html };
-      }
-
-      // Parse the HTML data if it's a JSON string
-      let parsedData;
-      try {
-        parsedData = JSON.parse(html);
       } catch (e) {
         // If not JSON, treat as single HTML batch
         parsedData = { initialBatch: html };
