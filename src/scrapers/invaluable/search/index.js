@@ -37,73 +37,55 @@ class SearchManager {
 
       await page.setCookie(...cookies);
       console.log('Navigating to search URL with cookies...');
+      let pageHtml = '';
+
       try {
+        // Initial page load - we only need this to trigger the first API call
         await page.goto(url, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
+        
+        // Capture initial page HTML
+        pageHtml = await page.content();
+        
+        // Wait for initial API response
+        await page.waitForResponse(
+          response => response.url().includes('catResults'),
+          { timeout: constants.defaultTimeout }
+        );
+
+        // Add a natural delay before the next request
+        await page.waitForTimeout(2000 + Math.random() * 2000);
+
+        // Trigger page 2 API call by evaluating script
+        await page.evaluate(() => {
+          window.dispatchEvent(new CustomEvent('load-more'));
+        });
+        
+        // Wait for second API response
+        await page.waitForResponse(
+          response => response.url().includes('catResults'),
+          { timeout: constants.defaultTimeout }
+        );
+
+        // Capture final HTML after all data is loaded
+        pageHtml = await page.content();
+
       } catch (error) {
         console.log('Navigation timeout or error, capturing data anyway');
-      }
-      
-      // Wait for first page to load
-      await apiMonitor.waitForPage(0);
-      
-      // Get total pages from first response
-      const stats = apiMonitor.getStats();
-      console.log('Initial search stats:', stats);
-      
-      // Get page 2 (we already have page 1)
-      if (stats.totalPages > 1) {
-        // Add random delay between requests (2-4 seconds)
-        const delay = 2000 + Math.floor(Math.random() * 2000);
-        console.log(`Waiting ${delay}ms before requesting page 2...`);
-        await new Promise(r => setTimeout(r, delay));
-        
-        // Modify the request data for page 2
-        const postData = {
-          "requests": [{
-            "indexName": "archive_prod",
-            "params": {
-              "attributesToRetrieve": ["watched","dateTimeUTCUnix","currencyCode","dateTimeLocal","lotTitle","lotNumber","lotRef","photoPath","houseName","currencySymbol","currencyCode","priceResult","saleType"],
-              "clickAnalytics": true,
-              "facets": ["hasImage","supercategoryName","artistName","dateTimeUTCUnix","houseName","countryName","currencyCode","priceResult","Fine Art","Asian Art & Antiques","Decorative Art","Collectibles","Furniture","Jewelry","Dolls%2C Bears & Toys","Firearms","Automobiles%2C Boats & Airplanes","Commercial & Industrial","Wines & Spirits"],
-              "filters": "banned:false AND dateTimeUTCUnix<1738508418 AND onlineOnly:false AND channelIDs:1 AND closed:true",
-              "highlightPostTag": "</ais-highlight-0000000000>",
-              "highlightPreTag": "<ais-highlight-0000000000>",
-              "hitsPerPage": 96,
-              "maxValuesPerFacet": 50,
-              "numericFilters": ["dateTimeUTCUnix>=1577833200","priceResult>=250"],
-              "page": 1,
-              "query": "fine art",
-              "userToken": "9166383",
-              "getRankingInfo": true
-            }
-          }]
-        };
-
-        await page.evaluate(data => {
-          return fetch('https://www.invaluable.com/catResults', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify(data)
-          });
-        }, postData);
-        
-        // Wait for page 2 data
-        await apiMonitor.waitForPage(1);
+        // Capture HTML even if there was an error
+        if (!pageHtml) {
+          pageHtml = await page.content();
+        }
       }
 
-      // Capture the raw HTML regardless of load status
-      const rawHtml = await page.content();
+      // Get the captured API data
       const apiData = apiMonitor.getData();
 
       return JSON.stringify({
-        html: rawHtml,
-        apiData,
+        html: pageHtml,
+        catResults: apiData,
         timestamp: new Date().toISOString()
       });
 
@@ -166,6 +148,34 @@ class SearchManager {
     });
     
     await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+  }
+  
+  async simulateNaturalScrolling(page) {
+    await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      
+      // Get total height
+      const totalHeight = document.documentElement.scrollHeight;
+      let currentPosition = 0;
+      
+      while (currentPosition < totalHeight) {
+        // Random scroll amount between 100-300 pixels
+        const scrollAmount = 100 + Math.floor(Math.random() * 200);
+        currentPosition += scrollAmount;
+        
+        // Smooth scroll
+        window.scrollTo({
+          top: currentPosition,
+          behavior: 'smooth'
+        });
+        
+        // Random pause between 500ms and 1.5s
+        await sleep(500 + Math.random() * 1000);
+      }
+    });
+    
+    // Final pause after scrolling
+    await page.waitForTimeout(1000);
   }
 }
 
