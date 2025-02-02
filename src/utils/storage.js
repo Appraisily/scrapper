@@ -31,55 +31,62 @@ class CloudStorage {
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const baseFolder = 'Fine Art';
-      const searchId = `${metadata.source}-${metadata.query}-${timestamp}`;
+      const searchId = `${metadata.source}-artists-${timestamp}`;
       console.log('📁 Step 14: Starting file saves');
 
-      // Save all HTML states
       metadata.files = {};
       
-      if (html.html.initial) {
-        console.log('  • Saving initial HTML');
-        const initialHtmlFilename = `${baseFolder}/html/${searchId}-initial.html`;
-        const initialHtmlFile = this.storage.bucket(this.bucketName).file(initialHtmlFilename);
-        await initialHtmlFile.save(html.html.initial);
-        metadata.files.initialHtml = initialHtmlFilename;
-      }
+      // Save results for each artist
+      metadata.files.artists = [];
       
-      if (html.html.protection) {
-        console.log('  • Saving protection HTML');
-        const protectionHtmlFilename = `${baseFolder}/html/${searchId}-protection.html`;
-        const protectionHtmlFile = this.storage.bucket(this.bucketName).file(protectionHtmlFilename);
-        await protectionHtmlFile.save(html.html.protection);
-        metadata.files.protectionHtml = protectionHtmlFilename;
-      }
-      
-      if (html.html.final) {
-        console.log('  • Saving final HTML');
-        const finalHtmlFilename = `${baseFolder}/html/${searchId}-final.html`;
-        const finalHtmlFile = this.storage.bucket(this.bucketName).file(finalHtmlFilename);
-        await finalHtmlFile.save(html.html.final);
-        metadata.files.finalHtml = finalHtmlFilename;
-      }
-      
-      // Save API responses if present
-      if (html.apiData?.responses?.length > 0) {
-        console.log('  • Saving API responses');
-        const apiResponses = html.apiData.responses;
-        metadata.files.api = [];
+      for (const result of html.results) {
+        const artistId = result.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const artistFiles = {
+          artist: result.artist,
+          html: {},
+          api: []
+        };
         
-        for (let i = 0; i < apiResponses.length; i++) {
-          console.log(`    - Saving API response ${i + 1}`);
-          const apiFilename = `${baseFolder}/api/${searchId}-response${i + 1}.json`;
-          const apiFile = this.storage.bucket(this.bucketName).file(apiFilename);
-          await apiFile.save(apiResponses[i]);
-          metadata.files.api.push(apiFilename);
+        if (result.html.initial) {
+          console.log(`  • Saving initial HTML for ${result.artist}`);
+          const filename = `${baseFolder}/html/${searchId}-${artistId}-initial.html`;
+          const file = this.storage.bucket(this.bucketName).file(filename);
+          await file.save(result.html.initial);
+          artistFiles.html.initial = filename;
         }
+        
+        if (result.html.protection) {
+          console.log(`  • Saving protection HTML for ${result.artist}`);
+          const filename = `${baseFolder}/html/${searchId}-${artistId}-protection.html`;
+          const file = this.storage.bucket(this.bucketName).file(filename);
+          await file.save(result.html.protection);
+          artistFiles.html.protection = filename;
+        }
+        
+        if (result.html.final) {
+          console.log(`  • Saving final HTML for ${result.artist}`);
+          const filename = `${baseFolder}/html/${searchId}-${artistId}-final.html`;
+          const file = this.storage.bucket(this.bucketName).file(filename);
+          await file.save(result.html.final);
+          artistFiles.html.final = filename;
+        }
+        
+        // Save API responses
+        if (result.apiData?.responses?.length > 0) {
+          console.log(`  • Saving API responses for ${result.artist}`);
+          for (let i = 0; i < result.apiData.responses.length; i++) {
+            const filename = `${baseFolder}/api/${searchId}-${artistId}-response${i + 1}.json`;
+            const file = this.storage.bucket(this.bucketName).file(filename);
+            await file.save(result.apiData.responses[i]);
+            artistFiles.api.push(filename);
+          }
+        }
+        
+        metadata.files.artists.push(artistFiles);
       }
       
-      metadata.captureTimestamp = html.timestamp;
       console.log('  • Saving metadata');
 
-      // Save metadata file
       const metadataFilename = `${baseFolder}/metadata/${searchId}.json`;
       const metadataFile = this.storage.bucket(this.bucketName).file(metadataFilename);
       await metadataFile.save(JSON.stringify(metadata, null, 2));

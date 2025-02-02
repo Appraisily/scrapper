@@ -6,6 +6,11 @@ const PaginationHandler = require('./pagination-handler');
 class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
+    this.artists = [
+      "Cornelis Johannes van der Aa",
+      "Dirk van der Aa",
+      "Jens Aabo"
+    ];
   }
 
   async searchItems(params = {}) {
@@ -26,20 +31,57 @@ class SearchManager {
     }
   }
 
-  async searchWithCookies(url, cookies) {
+  async searchWithCookies(cookies) {
     try {
       const page = this.browserManager.getPage();
-      console.log('🔄 Step 1: Starting search process with cookies');
+      console.log('🔄 Starting multi-artist search process');
+      
+      const results = [];
+      
+      for (const artist of this.artists) {
+        console.log(`\n📚 Processing artist: ${artist}`);
+        
+        const searchUrl = this.buildSearchUrl(artist);
+        console.log(`🔗 Search URL: ${searchUrl}`);
+        
+        const artistResult = await this.processArtistSearch(page, searchUrl, cookies);
+        results.push({
+          artist,
+          ...artistResult
+        });
+        
+        // Brief pause between artists
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      return {
+        results,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Multi-artist search error:', error);
+      throw error;
+    }
+  }
+
+  buildSearchUrl(artist) {
+    const params = new URLSearchParams({
+      query: artist,
+      priceResult: JSON.stringify({ min: 250 }),
+      sort: 'auctionDateAsc'
+    });
+    return `https://www.invaluable.com/search?${params.toString()}`;
+  }
+
+  async processArtistSearch(page, url, cookies) {
       
       let initialHtml = null;
       let protectionHtml = null;
       let finalHtml = null;
 
-      // Set cookies before enabling interception
       console.log('🍪 Step 2: Setting authentication cookies');
       await page.setCookie(...cookies);
 
-      // Enable request interception to capture API calls
       console.log('👀 Step 3: Enabling API request interception');
       await page.setRequestInterception(true);
       const apiMonitor = new ApiMonitor();
@@ -48,7 +90,6 @@ class SearchManager {
       console.log('🌐 Step 4: Navigating to search URL');
 
       try {
-        // Load page and capture initial HTML
         await page.goto(url, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
@@ -57,7 +98,6 @@ class SearchManager {
         console.log('📄 Step 5: Initial page HTML captured');
         initialHtml = await page.content();
         
-        // Handle protection if needed
         if (initialHtml.includes('checking your browser') || 
             initialHtml.includes('Access to this page has been denied')) {
           console.log('🛡️ Step 6a: Protection page detected');
@@ -72,7 +112,6 @@ class SearchManager {
 
         console.log('⏳ Step 7: Waiting for first API response');
         
-        // Wait for first API response with timeout
         try {
           if (apiMonitor.hasFirstResponse()) {
             console.log('📥 Step 8: First API response already captured');
@@ -87,16 +126,13 @@ class SearchManager {
           console.log('⚠️ Step 8 failed: Timeout waiting for first API response');
         }
 
-        // Wait a bit before clicking load more
         console.log('⌛ Step 9: Brief pause before load more');
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Find and click load more button
         const loadMoreButton = await page.$('.load-more-button-holder button.load-more-btn');
         if (loadMoreButton) {
           console.log('🔍 Step 10a: Load more button found');
           
-          // Get initial count
           const initialCount = await page.evaluate(() => {
             const countText = document.querySelector('.count-description .total-count')?.textContent;
             const count = countText ? parseInt(countText.replace(/,/g, ''), 10) : 0;
@@ -158,7 +194,6 @@ class SearchManager {
           console.log('  • Checked selector: .load-more-button-holder button.load-more-btn');
         }
 
-        // Capture final state
         console.log('📄 Step 11: Capturing final page state');
         finalHtml = await page.content();
         console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
@@ -177,7 +212,7 @@ class SearchManager {
       console.log(`  • Second response: ${apiMonitor.hasSecondResponse() ? '✅' : '❌'}`);
       console.log(`  • Total seen responses: ${apiMonitor.seenResponses.size}`);
 
-      const result = {
+      return {
         html: {
           initial: initialHtml,
           protection: protectionHtml,
@@ -185,15 +220,13 @@ class SearchManager {
           final: finalHtml
         },
         apiData,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        url
       };
-
-      return result;
     } catch (error) {
       console.error('Search with cookies error:', error);
       throw error;
     }
-  }
 
   async handleProtectionIfNeeded(page) {
     const html = await page.content();

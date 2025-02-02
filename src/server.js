@@ -78,7 +78,6 @@ app.get('/api/invaluable', async (req, res) => {
     const { query = 'fine art', keyword = 'fine art' } = req.query;
     console.log('Fetching Invaluable Fine Art data...');
     
-    // Essential auth cookies
     const cookies = [
       {
         name: 'AZTOKEN-PROD',
@@ -103,31 +102,22 @@ app.get('/api/invaluable', async (req, res) => {
     ];
 
     const searchUrl = 'https://www.invaluable.com/search?priceResult[min]=250&dateTimeUTCUnix[min]=1577833200&dateType=Custom&upcoming=false&sort=auctionDateAsc&query=fine%20art&keyword=fine%20art';
-    const result = await invaluableScraper.searchWithCookies(searchUrl, cookies);
+    const result = await invaluableScraper.searchWithCookies(cookies);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     
-    // Prepare metadata
     const metadata = {
       source: 'invaluable',
-      query,
-      keyword,
+      artists: invaluableScraper.artists,
       timestamp,
-      searchUrl,
       searchParams: {
-        upcoming: false,
-        query: 'fine art',
-        keyword: 'fine art',
         priceResult: { min: 250 },
-        dateTimeUTCUnix: { min: 1577833200 }, // Jan 1, 2020
-        dateType: 'Custom',
         sort: 'auctionDateAsc'
       },
       cookies: cookies.map(({ name, domain }) => ({ name, domain })), // Exclude cookie values for security
       status: 'pending_processing'
     };
 
-    // Save both HTML and metadata
     const savedData = await storage.saveSearchData(result, metadata);
     
     res.json({
