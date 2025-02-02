@@ -6,11 +6,72 @@ const PaginationHandler = require('./pagination-handler');
 class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
-    this.artists = [
-      "Cornelis Johannes van der Aa",
-      "Dirk van der Aa",
-      "Jens Aabo"
-    ];
+  }
+
+  async getArtistList(cookies) {
+    try {
+      const page = this.browserManager.getPage();
+      console.log('🔄 Starting artist list extraction');
+      
+      // Set cookies
+      await page.setCookie(...cookies);
+      
+      const url = 'https://www.invaluable.com/artists/A/Aa/?pageType=soldAtAuction';
+      console.log('🌐 Navigating to artists page:', url);
+      
+      await page.goto(url, {
+        waitUntil: 'networkidle0',
+        timeout: constants.navigationTimeout
+      });
+      
+      // Handle protection if needed
+      const html = await page.content();
+      if (html.includes('checking your browser') || 
+          html.includes('Access to this page has been denied')) {
+        console.log('🛡️ Protection page detected, handling...');
+        await this.browserManager.handleProtection();
+        await page.waitForTimeout(2000);
+      }
+      
+      // Wait for artist list to load
+      await page.waitForSelector('.ais-Hits-list', { timeout: constants.defaultTimeout });
+      
+      // Extract artist data
+      const artists = await page.evaluate(() => {
+        const items = Array.from(document.querySelectorAll('.ais-Hits-item'));
+        return items.map(item => {
+          const link = item.querySelector('a');
+          const span = item.querySelector('span');
+          if (!link || !span) return null;
+          
+          const url = link.href;
+          const fullText = span.textContent;
+          const match = fullText.match(/^(.+?)\s*\((\d+)\)$/);
+          
+          if (!match) return null;
+          
+          return {
+            name: match[1].trim(),
+            count: parseInt(match[2], 10),
+            url: url
+          };
+        }).filter(item => item !== null);
+      });
+      
+      console.log(`📝 Found ${artists.length} artists`);
+      
+      return {
+        artists,
+        timestamp: new Date().toISOString(),
+        source: 'invaluable',
+        section: 'A/Aa',
+        url
+      };
+      
+    } catch (error) {
+      console.error('Error getting artist list:', error);
+      throw error;
+    }
   }
 
   async searchItems(params = {}) {
