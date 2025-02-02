@@ -53,6 +53,7 @@ class SearchManager {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
+
         console.log('📄 Step 5: Initial page HTML captured');
         initialHtml = await page.content();
         
@@ -61,67 +62,127 @@ class SearchManager {
             initialHtml.includes('Access to this page has been denied')) {
           console.log('🛡️ Step 6a: Protection page detected');
           protectionHtml = initialHtml;
-          console.log('🤖 Step 6b: Handling protection challenge');
+          console.log('🤖 Step 6b: Processing protection challenge');
           await this.browserManager.handleProtection();
-          console.log('✅ Step 6c: Protection cleared, capturing new HTML');
+          console.log('✅ Step 6c: Protection cleared');
           initialHtml = await page.content();
+        } else {
+          console.log('✅ Step 6: No protection detected');
         }
 
         console.log('⏳ Step 7: Waiting for first API response');
         
         // Wait for first API response with timeout
         try {
-          await page.waitForResponse(
-            response => response.url().includes('catResults'),
-            { timeout: constants.defaultTimeout }
-          );
-          console.log('📥 Step 8: First API response captured');
+          if (!apiMonitor.hasFirstResponse()) {
+          if (apiMonitor.hasFirstResponse()) {
+            console.log('📥 Step 8: First API response already captured');
+          } else {
+            await page.waitForResponse(
+              response => response.url().includes('catResults'),
+              { timeout: constants.defaultTimeout }
+            );
+            console.log('📥 Step 8: First API response captured');
+          }
         } catch (error) {
           console.log('⚠️ Step 8 failed: Timeout waiting for first API response');
         }
 
         // Wait a bit before clicking load more
         console.log('⌛ Step 9: Brief pause before load more');
-        await page.waitForTimeout(2000);
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Find and click load more button
-        const loadMoreButton = await page.$('button.load-more-btn');
+        const loadMoreButton = await page.$('.load-more-button-holder button.load-more-btn');
         if (loadMoreButton) {
           console.log('🔍 Step 10a: Load more button found');
+          
+          // Get initial count
+          const initialCount = await page.evaluate(() => {
+            const countText = document.querySelector('.count-description .total-count')?.textContent;
+            const count = countText ? parseInt(countText.replace(/,/g, ''), 10) : 0;
+            console.log(`  • 📊 Found count text: "${countText}"`);
+            return count;
+          });
+          console.log(`  • 📈 Total available items: ${initialCount.toLocaleString()}`);
+          
           try {
             console.log('🖱️ Step 10b: Clicking load more button');
-            await loadMoreButton.click();
+            console.log('  • Waiting for button to be ready...');
+            await Promise.all([
+              loadMoreButton.click(),
+              page.waitForFunction(() => {
+                const btn = document.querySelector('.load-more-button-holder button.load-more-btn');
+                return btn && !btn.disabled;
+              }, { timeout: constants.defaultTimeout })
+            ]);
+            console.log('  • ✅ Button clicked successfully');
+            
             console.log('⏳ Step 10c: Waiting for second API response');
             await page.waitForResponse(
               response => response.url().includes('catResults'),
               { timeout: constants.defaultTimeout }
             );
             console.log('📥 Step 10d: Second API response captured');
+            
+            // Wait for new items to be rendered
+            console.log('  • Waiting for new items to appear...');
+            await page.waitForFunction((prevCount) => {
+              const results = document.querySelectorAll('.lot-search-result');
+              return results.length > prevCount;
+            }, { timeout: constants.defaultTimeout }, initialCount);
+            console.log('  • ✅ New items detected');
+            
+            // Capture intermediate HTML after load more
+            const intermediateHtml = await page.content();
+            console.log('📄 Step 10e: Captured intermediate HTML state');
+            console.log(`  • Size: ${(intermediateHtml.length / 1024).toFixed(2)} KB`);
+            
+            // Get updated count
+            const newCount = await page.evaluate(() => {
+              const results = document.querySelectorAll('.lot-search-result');
+              console.log(`Found ${results.length} items in DOM`);
+              return results.length;
+            });
+            console.log(`  • 📊 Items loaded: ${newCount.toLocaleString()}`);
+            console.log(`  • 📈 Items added: ${(newCount - initialCount).toLocaleString()}`);
+            
+            // Add intermediate HTML to result
+            result.html.afterLoadMore = intermediateHtml;
           } catch (error) {
-            console.log('⚠️ Step 10 failed: Error with second API response:', error.message);
+            console.log('❌ Step 10 failed:');
+            console.log(`  • Error: ${error.message}`);
+            console.log(`  • Stack: ${error.stack}`);
           }
         } else {
           console.log('ℹ️ Step 10: No load more button found');
+          console.log('  • Checked selector: .load-more-button-holder button.load-more-btn');
         }
 
         // Capture final state
         console.log('📄 Step 11: Capturing final page state');
         finalHtml = await page.content();
+        console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
 
       } catch (error) {
-        console.log('❌ Error during process:', error.message);
+        console.log('❌ Error during process:');
+        console.log(`  • Message: ${error.message}`);
+        console.log(`  • Stack: ${error.stack}`);
       }
 
       const apiData = apiMonitor.getData();
       console.log('📊 Step 12: Final status:');
-      console.log(`  • Total API responses: ${apiData.responses.length}`);
+      console.log(`  • Total unique responses: ${apiData.responses.length}`);
+      console.log(`  • Response sizes: ${apiData.responses.map(r => (r.length / 1024).toFixed(2) + ' KB').join(', ')}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
       console.log(`  • Second response: ${apiMonitor.hasSecondResponse() ? '✅' : '❌'}`);
+      console.log(`  • Total seen responses: ${apiMonitor.seenResponses.size}`);
 
       const result = {
         html: {
           initial: initialHtml,
           protection: protectionHtml,
+          afterLoadMore: null,
           final: finalHtml
         },
         apiData,
@@ -191,7 +252,7 @@ class SearchManager {
   }
   
   async simulateNaturalScrolling(page) {
-    await page.evaluate(async () => {
+    await page.evaluate(() => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       
       // Get total height
@@ -215,7 +276,7 @@ class SearchManager {
     });
     
     // Final pause after scrolling
-    await page.waitForTimeout(1000);
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 }
 
