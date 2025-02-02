@@ -251,7 +251,7 @@ class SearchManager {
   }
   
   async simulateNaturalScrolling(page) {
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
       
       // Get total height
