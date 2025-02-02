@@ -129,7 +129,6 @@ class CloudStorage {
       }
       
       // Save the file
-      const file = this.storage.bucket(this.bucketName).file(filename);
       await file.save(JSON.stringify(data, null, 2));
       console.log('File saved successfully');
 
