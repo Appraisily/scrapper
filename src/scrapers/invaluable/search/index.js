@@ -206,3 +206,6 @@ class SearchManager {
       throw error;
     }
   }
+}
+
+module.exports = SearchManager;
