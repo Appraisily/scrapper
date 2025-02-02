@@ -105,6 +105,18 @@ app.get('/api/invaluable', async (req, res) => {
     const searchUrl = 'https://www.invaluable.com/search?priceResult[min]=250&dateTimeUTCUnix[min]=1577833200&dateType=Custom&upcoming=false&sort=auctionDateAsc&query=fine%20art&keyword=fine%20art';
     const html = await invaluableScraper.searchWithCookies(searchUrl, cookies);
 
+    // Parse the captured data
+    const data = JSON.parse(html);
+    
+    // Extract API data if available
+    const apiData = data.apiData?.catResults?.response;
+    if (apiData) {
+      console.log('Successfully captured Algolia search results:', {
+        totalHits: apiData.results?.[0]?.nbHits,
+        totalPages: apiData.results?.[0]?.nbPages
+      });
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     
     // Prepare metadata
@@ -116,12 +128,17 @@ app.get('/api/invaluable', async (req, res) => {
       searchUrl,
       searchParams: {
         upcoming: false,
-        query,
+        query: 'fine art',
         keyword: 'fine art',
         priceResult: { min: 250 },
         dateTimeUTCUnix: { min: 1577833200 }, // Jan 1, 2020
         dateType: 'Custom',
         sort: 'auctionDateAsc'
+      },
+      apiStats: {
+        totalHits: apiData?.results?.[0]?.nbHits,
+        totalPages: apiData?.results?.[0]?.nbPages,
+        processingTimeMS: apiData?.results?.[0]?.processingTimeMS
       },
       cookies: cookies.map(({ name, domain }) => ({ name, domain })), // Exclude cookie values for security
       status: 'pending_processing'
