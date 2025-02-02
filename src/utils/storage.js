@@ -37,14 +37,19 @@ class CloudStorage {
       const htmlFile = this.storage.bucket(this.bucketName).file(htmlFilename);
       await htmlFile.save(html.html);
       
-      // Save raw API response if present
-      if (html.apiData?.response) {
-        const apiFilename = `${baseFolder}/api/${searchId}.json`;
-        const apiFile = this.storage.bucket(this.bucketName).file(apiFilename);
-        await apiFile.save(html.apiData.response);
-        metadata.files = { html: htmlFilename, api: apiFilename };
-      } else {
-        metadata.files = { html: htmlFilename };
+      // Save API responses if present
+      metadata.files = { html: htmlFilename };
+      
+      if (html.apiData?.responses?.length > 0) {
+        const apiResponses = html.apiData.responses;
+        metadata.files.api = [];
+        
+        for (let i = 0; i < apiResponses.length; i++) {
+          const apiFilename = `${baseFolder}/api/${searchId}-page${i + 1}.json`;
+          const apiFile = this.storage.bucket(this.bucketName).file(apiFilename);
+          await apiFile.save(apiResponses[i]);
+          metadata.files.api.push(apiFilename);
+        }
       }
       
       metadata.captureTimestamp = html.timestamp;

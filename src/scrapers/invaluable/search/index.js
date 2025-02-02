@@ -29,44 +29,60 @@ class SearchManager {
   async searchWithCookies(url, cookies) {
     try {
       const page = this.browserManager.getPage();
+      let initialHtml = '';
+
+      // Set cookies before enabling interception
+      await page.setCookie(...cookies);
 
       // Enable request interception to capture API calls
       await page.setRequestInterception(true);
       const apiMonitor = new ApiMonitor();
       apiMonitor.setupRequestInterception(page);
 
-      // Set initial HTML capture
-      let initialHtml = '';
-
-      await page.setCookie(...cookies);
       console.log('Navigating to search URL with cookies...');
 
       try {
-        // Initial page load - we only need this to trigger the first API call
+        // Initial page load
         await page.goto(url, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
         
-        // Only capture initial HTML to verify access
+        // Handle cookie consent if present
+        const cookieFrame = await page.$('iframe[id^="CybotCookiebotDialog"]');
+        if (cookieFrame) {
+          console.log('Handling cookie consent...');
+          const frame = await cookieFrame.contentFrame();
+          await frame.click('#CybotCookiebotDialogBodyButtonAccept');
+          await page.waitForTimeout(2000);
+        }
+
+        // Capture HTML after cookie consent
         initialHtml = await page.content() || '';
-        console.log('Initial page loaded, waiting for first API response...');
+        if (initialHtml.includes('checking your browser') || 
+            initialHtml.includes('Access to this page has been denied')) {
+          console.log('Protection page detected, handling...');
+          await this.browserManager.handleProtection();
+          initialHtml = await page.content() || '';
+        }
+
+        console.log('Initial page loaded, waiting for API response...');
         
-        // Wait for initial API response
+        // Wait for first API response
         await page.waitForResponse(
           response => response.url().includes('catResults'),
           { timeout: constants.defaultTimeout }
         );
 
-        // Add a natural delay before the next request
-        await page.evaluate(ms => new Promise(r => setTimeout(r, ms)), 2000 + Math.random() * 2000);
+        // Wait a bit before clicking load more
+        await page.waitForTimeout(2000);
 
-        // Find and click the load more button
+        // Find and click load more button
         const loadMoreButton = await page.$('button.load-more-btn');
         if (loadMoreButton) {
           console.log('Found load more button, clicking...');
           await loadMoreButton.click();
-        
+
           // Wait for second API response
           await page.waitForResponse(
             response => response.url().includes('catResults'),
@@ -81,14 +97,12 @@ class SearchManager {
         console.log('Error during navigation or API capture:', error.message);
       }
 
-      // Get the captured API data
       const apiData = apiMonitor.getData();
+      console.log(`Total API responses captured: ${apiData.responses.length}`);
 
       const result = {
         html: initialHtml, // Only store initial HTML for verification
-        apiData: {
-          response: apiData.response || null
-        },
+        apiData,
         timestamp: new Date().toISOString()
       };
 
