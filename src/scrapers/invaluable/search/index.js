@@ -99,7 +99,7 @@ class SearchManager {
       for (const artist of this.artists) {
         console.log(`\n📚 Processing artist: ${artist}`);
         
-        const searchUrl = `https://www.invaluable.com/search?query=${encodeURIComponent(artist)}&priceResult[min]=250&sort=auctionDateAsc`;
+        const searchUrl = `https://www.invaluable.com/search?priceResult[min]=250&upcoming=false&query=${encodeURIComponent(artist)}&keyword=${encodeURIComponent(artist)}`;
         console.log(`🔗 Search URL: ${searchUrl}`);
         
         const artistResult = await this.processArtistSearch(page, searchUrl, cookies);
@@ -127,6 +127,9 @@ class SearchManager {
       let initialHtml = null;
       let protectionHtml = null;
       let finalHtml = null;
+      
+      // Disable any existing request interception first
+      await page.setRequestInterception(false);
 
       console.log('🍪 Step 2: Setting authentication cookies');
       await page.setCookie(...cookies);
@@ -134,6 +137,8 @@ class SearchManager {
       // Set up API monitoring before navigation
       const apiMonitor = new ApiMonitor();
       console.log('👀 Step 3: Enabling API request interception');
+      
+      // Enable request interception and set up the monitor
       await page.setRequestInterception(true);
       apiMonitor.setupRequestInterception(page);
       

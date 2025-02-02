@@ -30,6 +30,10 @@ class InvaluableScraper {
   async searchWithCookies(url, cookies) {
     return this.search.searchWithCookies(url, cookies);
   }
+
+  async getArtistList() {
+    return this.search.getArtistList();
+  }
 }
 
 module.exports = InvaluableScraper;
