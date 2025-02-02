@@ -17,7 +17,6 @@ if (missingEnvVars.length > 0) {
 
 const app = express();
 
-// Scraper instance
 let invaluableScraper = null;
 let initializingInvaluable = false;
 
@@ -43,15 +42,11 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Invaluable Scraper API is running' });
 });
 
-  }
-});
 app.use(cors());
 app.use(express.json());
 
-// Store instances in app.locals for route access
 app.locals.storage = storage;
 
-// Initialize scraper
 async function initializeScraper() {
   if (initializingInvaluable) {
     while (initializingInvaluable) {
@@ -76,18 +71,27 @@ async function initializeScraper() {
   }
 }
 
-// Invaluable Search
-app.get('/api/invaluable', async (req, res) => {
+// Initialize scraper and set up routes
+async function startServer() {
   try {
-// Initialize scraper before setting up routes
-await initializeScraper();
+    await initializeScraper();
+    
+    app.use('/api/invaluable/artists', artistsRouter);
+    app.use('/api/invaluable', searchRouter);
+    
+    const server = app.listen(port, '0.0.0.0', () => {
+      console.log(`Server is now listening on port ${port}`);
+      console.log('Google Cloud Project:', process.env.GOOGLE_CLOUD_PROJECT);
+    });
 
-// Mount routes
-app.use('/api/invaluable/artists', artistsRouter);
-app.use('/api/invaluable', searchRouter);
+    server.on('error', (error) => {
+      console.error('Server error:', error);
+      process.exit(1);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
 
-// Add error handler
-server.on('error', (error) => {
-  console.error('Server error:', error);
-  process.exit(1);
-});
+startServer();
