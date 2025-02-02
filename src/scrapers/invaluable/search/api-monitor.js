@@ -3,6 +3,8 @@ const { constants } = require('../utils');
 class ApiMonitor {
   constructor() {
     this.responses = [];
+    this.firstResponseCaptured = false;
+    this.secondResponseCaptured = false;
   }
 
   setupRequestInterception(page) {
@@ -22,14 +24,33 @@ class ApiMonitor {
     page.on('response', async response => {
       try {
         if (response.url().includes('catResults')) {
-          const responseData = await response.text();
-          this.responses.push(responseData);
-          console.log(`Captured catResults API response #${this.responses.length}`);
+          // Only capture first two unique responses
+          if (!this.firstResponseCaptured) {
+            const responseData = await response.text();
+            this.responses.push(responseData);
+            console.log('Captured first API response');
+            this.firstResponseCaptured = true;
+          } else if (!this.secondResponseCaptured && this.firstResponseCaptured) {
+            const responseData = await response.text();
+            if (responseData !== this.responses[0]) {
+              this.responses.push(responseData);
+              console.log('Captured second API response');
+              this.secondResponseCaptured = true;
+            }
+          }
         }
       } catch (error) {
         console.error('Error handling response:', error);
       }
     });
+  }
+
+  hasFirstResponse() {
+    return this.firstResponseCaptured;
+  }
+
+  hasSecondResponse() {
+    return this.secondResponseCaptured;
   }
   
   getData() {

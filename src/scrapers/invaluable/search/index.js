@@ -29,79 +29,101 @@ class SearchManager {
   async searchWithCookies(url, cookies) {
     try {
       const page = this.browserManager.getPage();
-      let initialHtml = '';
+      console.log('🔄 Step 1: Starting search process with cookies');
+      
+      let initialHtml = null;
+      let protectionHtml = null;
+      let finalHtml = null;
 
       // Set cookies before enabling interception
+      console.log('🍪 Step 2: Setting authentication cookies');
       await page.setCookie(...cookies);
 
       // Enable request interception to capture API calls
+      console.log('👀 Step 3: Enabling API request interception');
       await page.setRequestInterception(true);
       const apiMonitor = new ApiMonitor();
       apiMonitor.setupRequestInterception(page);
 
-      console.log('Navigating to search URL with cookies...');
+      console.log('🌐 Step 4: Navigating to search URL');
 
       try {
-        // Initial page load
+        // Load page and capture initial HTML
         await page.goto(url, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
+        console.log('📄 Step 5: Initial page HTML captured');
+        initialHtml = await page.content();
         
-        // Handle cookie consent if present
-        const cookieFrame = await page.$('iframe[id^="CybotCookiebotDialog"]');
-        if (cookieFrame) {
-          console.log('Handling cookie consent...');
-          const frame = await cookieFrame.contentFrame();
-          await frame.click('#CybotCookiebotDialogBodyButtonAccept');
-          await page.waitForTimeout(2000);
-        }
-
-        // Capture HTML after cookie consent
-        initialHtml = await page.content() || '';
+        // Handle protection if needed
         if (initialHtml.includes('checking your browser') || 
             initialHtml.includes('Access to this page has been denied')) {
-          console.log('Protection page detected, handling...');
+          console.log('🛡️ Step 6a: Protection page detected');
+          protectionHtml = initialHtml;
+          console.log('🤖 Step 6b: Handling protection challenge');
           await this.browserManager.handleProtection();
-          initialHtml = await page.content() || '';
+          console.log('✅ Step 6c: Protection cleared, capturing new HTML');
+          initialHtml = await page.content();
         }
 
-        console.log('Initial page loaded, waiting for API response...');
+        console.log('⏳ Step 7: Waiting for first API response');
         
-        // Wait for first API response
-        await page.waitForResponse(
-          response => response.url().includes('catResults'),
-          { timeout: constants.defaultTimeout }
-        );
+        // Wait for first API response with timeout
+        try {
+          await page.waitForResponse(
+            response => response.url().includes('catResults'),
+            { timeout: constants.defaultTimeout }
+          );
+          console.log('📥 Step 8: First API response captured');
+        } catch (error) {
+          console.log('⚠️ Step 8 failed: Timeout waiting for first API response');
+        }
 
         // Wait a bit before clicking load more
+        console.log('⌛ Step 9: Brief pause before load more');
         await page.waitForTimeout(2000);
 
         // Find and click load more button
         const loadMoreButton = await page.$('button.load-more-btn');
         if (loadMoreButton) {
-          console.log('Found load more button, clicking...');
-          await loadMoreButton.click();
-
-          // Wait for second API response
-          await page.waitForResponse(
-            response => response.url().includes('catResults'),
-            { timeout: constants.defaultTimeout }
-          );
-          console.log('Second API response captured');
+          console.log('🔍 Step 10a: Load more button found');
+          try {
+            console.log('🖱️ Step 10b: Clicking load more button');
+            await loadMoreButton.click();
+            console.log('⏳ Step 10c: Waiting for second API response');
+            await page.waitForResponse(
+              response => response.url().includes('catResults'),
+              { timeout: constants.defaultTimeout }
+            );
+            console.log('📥 Step 10d: Second API response captured');
+          } catch (error) {
+            console.log('⚠️ Step 10 failed: Error with second API response:', error.message);
+          }
         } else {
-          console.log('No load more button found');
+          console.log('ℹ️ Step 10: No load more button found');
         }
 
+        // Capture final state
+        console.log('📄 Step 11: Capturing final page state');
+        finalHtml = await page.content();
+
       } catch (error) {
-        console.log('Error during navigation or API capture:', error.message);
+        console.log('❌ Error during process:', error.message);
       }
 
       const apiData = apiMonitor.getData();
-      console.log(`Total API responses captured: ${apiData.responses.length}`);
+      console.log('📊 Step 12: Final status:');
+      console.log(`  • Total API responses: ${apiData.responses.length}`);
+      console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
+      console.log(`  • Second response: ${apiMonitor.hasSecondResponse() ? '✅' : '❌'}`);
 
       const result = {
-        html: initialHtml, // Only store initial HTML for verification
+        html: {
+          initial: initialHtml,
+          protection: protectionHtml,
+          final: finalHtml
+        },
         apiData,
         timestamp: new Date().toISOString()
       };

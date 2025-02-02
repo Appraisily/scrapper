@@ -25,27 +25,51 @@ class CloudStorage {
   async saveSearchData(html, metadata) {
     try {
       if (!this.initialized) {
+        console.log('💾 Step 13: Initializing storage');
         await this.initialize();
       }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const baseFolder = 'Fine Art';
       const searchId = `${metadata.source}-${metadata.query}-${timestamp}`;
+      console.log('📁 Step 14: Starting file saves');
 
-      // Save initial HTML for verification
-      const htmlFilename = `${baseFolder}/html/${searchId}.html`;
-      const htmlFile = this.storage.bucket(this.bucketName).file(htmlFilename);
-      await htmlFile.save(html.html);
+      // Save all HTML states
+      metadata.files = {};
+      
+      if (html.html.initial) {
+        console.log('  • Saving initial HTML');
+        const initialHtmlFilename = `${baseFolder}/html/${searchId}-initial.html`;
+        const initialHtmlFile = this.storage.bucket(this.bucketName).file(initialHtmlFilename);
+        await initialHtmlFile.save(html.html.initial);
+        metadata.files.initialHtml = initialHtmlFilename;
+      }
+      
+      if (html.html.protection) {
+        console.log('  • Saving protection HTML');
+        const protectionHtmlFilename = `${baseFolder}/html/${searchId}-protection.html`;
+        const protectionHtmlFile = this.storage.bucket(this.bucketName).file(protectionHtmlFilename);
+        await protectionHtmlFile.save(html.html.protection);
+        metadata.files.protectionHtml = protectionHtmlFilename;
+      }
+      
+      if (html.html.final) {
+        console.log('  • Saving final HTML');
+        const finalHtmlFilename = `${baseFolder}/html/${searchId}-final.html`;
+        const finalHtmlFile = this.storage.bucket(this.bucketName).file(finalHtmlFilename);
+        await finalHtmlFile.save(html.html.final);
+        metadata.files.finalHtml = finalHtmlFilename;
+      }
       
       // Save API responses if present
-      metadata.files = { html: htmlFilename };
-      
       if (html.apiData?.responses?.length > 0) {
+        console.log('  • Saving API responses');
         const apiResponses = html.apiData.responses;
         metadata.files.api = [];
         
         for (let i = 0; i < apiResponses.length; i++) {
-          const apiFilename = `${baseFolder}/api/${searchId}-page${i + 1}.json`;
+          console.log(`    - Saving API response ${i + 1}`);
+          const apiFilename = `${baseFolder}/api/${searchId}-response${i + 1}.json`;
           const apiFile = this.storage.bucket(this.bucketName).file(apiFilename);
           await apiFile.save(apiResponses[i]);
           metadata.files.api.push(apiFilename);
@@ -53,17 +77,23 @@ class CloudStorage {
       }
       
       metadata.captureTimestamp = html.timestamp;
+      console.log('  • Saving metadata');
 
       // Save metadata file
       const metadataFilename = `${baseFolder}/metadata/${searchId}.json`;
       const metadataFile = this.storage.bucket(this.bucketName).file(metadataFilename);
       await metadataFile.save(JSON.stringify(metadata, null, 2));
 
-      console.log(`[Storage] Raw data saved successfully for search ID: ${searchId}`);
+      console.log('✅ Step 15: All files saved successfully');
+      console.log(`  Search ID: ${searchId}`);
       
       return {
         searchId,
-        htmlPath: metadata.files.html,
+        htmlPaths: {
+          initial: metadata.files.initialHtml,
+          protection: metadata.files.protectionHtml,
+          final: metadata.files.finalHtml
+        },
         apiPath: metadata.files.api,
         metadataPath: metadataFilename
       };

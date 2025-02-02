@@ -2,48 +2,81 @@
 
 A specialized Node.js web scraper for extracting fine art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
 
+## Overview
+
+This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings, with specific focus on:
+- Initial page load data
+- Protection/challenge page handling
+- "Load More" pagination responses
+- Raw HTML states at various stages
+- Structured API responses
+
 ## Features
 
-### Data Collection
-- Real-time auction data extraction
-- HTML content storage in Google Cloud Storage
-- Structured metadata storage
-- Protection bypass mechanisms
-- Cookie-based authentication
+### Core Functionality
+- **HTML Capture**
+  - Initial page state
+  - Protection/challenge pages
+  - Final page state after interactions
+  - Automatic state tracking
+
+- **API Response Capture**
+  - First page results
+  - Pagination/load more responses
+  - Raw JSON preservation
+  - Response deduplication
+
+- **Protection Handling**
+  - Cloudflare challenge bypass
+  - Bot detection avoidance
+  - Cookie management
+  - Session persistence
 
 ### Technical Features
-- **Advanced Browser Automation**
-  - Puppeteer with Stealth Plugin
-  - Human-like behavior simulation
+
+#### Browser Automation
+- Puppeteer with Stealth Plugin
+- Human behavior simulation:
+  - Random mouse movements
+  - Natural scrolling patterns
+  - Realistic timing delays
   - Dynamic viewport handling
-  - Network condition emulation
-  - Protection bypass mechanisms
 
-- **Cloud Storage Integration**
-  - Organized folder structure for Fine Art data
-  - HTML content storage
-  - JSON metadata storage
-  - Signed URLs for file access
-  - Timestamped file organization
+#### Storage Integration
+- Google Cloud Storage organization:
+  ```
+  Fine Art/
+  ├── html/
+  │   ├── {searchId}-initial.html
+  │   ├── {searchId}-protection.html
+  │   └── {searchId}-final.html
+  ├── api/
+  │   ├── {searchId}-response1.json
+  │   └── {searchId}-response2.json
+  └── metadata/
+      └── {searchId}.json
+  ```
 
-- **API Features**
-  - RESTful endpoints
-  - CORS support
-  - Query parameter handling
-  - Response formatting
-
-- **Deployment**
-  - Docker containerization
-  - Google Cloud Run deployment
-  - Environment variable management
+#### API Features
+- RESTful endpoint
+- Query parameter support
+- Comprehensive response format
+- Error handling
 
 ## Prerequisites
 
 - Node.js (v18 or higher)
-- npm
-- Docker (for containerized deployment)
-- Google Cloud SDK (for deployment)
+- Google Cloud SDK
+- Docker (for containerization)
 - Access to Google Cloud Storage bucket
+
+## Environment Variables
+
+Required variables in `.env`:
+```
+GOOGLE_CLOUD_PROJECT=your-project-id
+STORAGE_BUCKET=invaluable-html-archive
+```
 
 ## Installation
 
@@ -58,87 +91,105 @@ cd invaluable-scraper
 npm install
 ```
 
-3. Start the development server:
+3. Start the server:
 ```bash
 npm start
 ```
 
-The server will start on port 8080 (or the port specified in your environment).
+## API Documentation
 
-## API Endpoint
+### Search Endpoint
 
-### Invaluable Search
 ```
 GET /api/invaluable
 ```
-Query Parameters:
-- `query` (optional): Main search query (default: "picasso")
-- `keyword` (optional): Additional keyword filter (default: "picasso")
 
-Returns:
+Query Parameters:
+- `query` (optional): Main search query (default: "fine art")
+- `keyword` (optional): Additional keyword filter (default: "fine art")
+
+Example Response:
 ```json
 {
   "success": true,
   "message": "Search results saved successfully",
-  "searchId": "invaluable-picasso-2024-01-15T10-30-00Z",
+  "searchId": "invaluable-fine-art-2024-02-02T17-38-07-714Z",
   "files": {
-    "html": "Fine Art/html/invaluable-picasso-2024-01-15T10-30-00Z.html",
-    "metadata": "Fine Art/metadata/invaluable-picasso-2024-01-15T10-30-00Z.json"
-  },
-  "urls": {
-    "html": "https://storage.googleapis.com/...",
-    "metadata": "https://storage.googleapis.com/..."
+    "html": {
+      "initial": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-initial.html",
+      "protection": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-protection.html",
+      "final": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-final.html"
+    },
+    "api": [
+      "Fine Art/api/invaluable-fine-art-2024-02-02T17-38-07-714Z-response1.json",
+      "Fine Art/api/invaluable-fine-art-2024-02-02T17-38-07-714Z-response2.json"
+    ]
   },
   "metadata": {
     "source": "invaluable",
-    "query": "picasso",
-    "keyword": "picasso",
-    "timestamp": "2024-01-15T10:30:00Z",
+    "query": "fine art",
+    "keyword": "fine art",
+    "timestamp": "2024-02-02T17:38:07.714Z",
     "searchUrl": "https://www.invaluable.com/search?...",
     "searchParams": {
       "upcoming": false,
-      "query": "picasso",
-      "keyword": "picasso"
+      "query": "fine art",
+      "keyword": "fine art",
+      "priceResult": { "min": 250 },
+      "dateTimeUTCUnix": { "min": 1577833200 },
+      "dateType": "Custom",
+      "sort": "auctionDateAsc"
     },
     "status": "pending_processing"
   }
 }
 ```
 
-## Storage Structure
+## Process Flow
 
-```
-art-market-data/
-└── Fine Art/
-    ├── html/
-    │   └── invaluable-{query}-{timestamp}.html
-    └── metadata/
-        └── invaluable-{query}-{timestamp}.json
-```
+The scraper follows these steps (with detailed logging):
 
-## Development
+1. 🔄 Start search process
+2. 🍪 Set authentication cookies
+3. 👀 Enable API request interception
+4. 🌐 Navigate to search URL
+5. 📄 Capture initial HTML
+6. 🛡️ Handle protection if needed
+   - 🤖 Process challenge
+   - ✅ Clear protection
+7. ⏳ Wait for first API response
+8. 📥 Capture first API response
+9. ⌛ Pause before load more
+10. 🔍 Handle load more
+    - 🖱️ Click button
+    - ⏳ Wait for response
+    - 📥 Capture second response
+11. 📄 Capture final state
+12. 📊 Generate status report
+13. 💾 Initialize storage
+14. 📁 Save all files
+15. ✅ Complete process
 
-Start the development server:
-```bash
-npm start
-```
+## Deployment
 
-## Docker Deployment
+### Docker
 
-Build the Docker image:
+Build the image:
 ```bash
 docker build -t invaluable-scraper .
-docker tag invaluable-scraper gcr.io/$PROJECT_ID/worthpoint-scraper
 ```
 
-Run the container:
+Run locally:
 ```bash
-docker run -p 8080:8080 invaluable-scraper
+docker run -p 8080:8080 \
+  -e GOOGLE_CLOUD_PROJECT=your-project-id \
+  -e STORAGE_BUCKET=invaluable-html-archive \
+  invaluable-scraper
 ```
 
-## Google Cloud Run Deployment
+### Google Cloud Run
 
-Deploy to Cloud Run:
+Deploy using Cloud Build:
 ```bash
 gcloud builds submit --config cloudbuild.yaml
 ```
@@ -147,40 +198,32 @@ gcloud builds submit --config cloudbuild.yaml
 
 ```
 ├── src/
-│   ├── server.js                 # Express server and API routes
+│   ├── server.js                 # Express server setup
 │   ├── scrapers/
 │   │   └── invaluable/
-│   │       ├── index.js         # Main scraper export
+│   │       ├── index.js         # Main scraper class
 │   │       ├── browser.js       # Browser management
 │   │       ├── auth.js          # Authentication handling
-│   │       ├── search.js        # Search functionality
-│   │       └── utils.js         # Utility functions
+│   │       └── search/
+│   │           ├── index.js     # Search functionality
+│   │           ├── api-monitor.js # API response capture
+│   │           └── pagination-handler.js # Load more handling
 │   └── utils/
-│       └── storage.js           # Google Cloud Storage integration
-├── Dockerfile                    # Docker configuration
-├── cloudbuild.yaml              # Cloud Build configuration
-└── package.json                 # Project dependencies
+│       └── storage.js           # GCS integration
+├── Dockerfile                    # Container configuration
+├── cloudbuild.yaml              # Cloud Build config
+└── package.json                 # Dependencies
 ```
 
 ## Error Handling
 
-The API implements comprehensive error handling:
-- Network errors
-- Storage errors
-- Rate limiting
-- Invalid parameters
+The system handles various error scenarios:
+- Network timeouts
 - Protection challenges
-- Scraping failures
-
-## Current Status
-
-The project is actively maintained and includes:
-- ✅ Invaluable integration
-- ✅ Protection bypass
-- ✅ Cloud Storage integration
-- ✅ Containerized deployment
-- ✅ Cloud Run hosting
-- ✅ Automated builds
+- API failures
+- Storage errors
+- Invalid responses
+- Rate limiting
 
 ## Contributing
 
