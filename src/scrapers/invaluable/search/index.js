@@ -6,6 +6,11 @@ const PaginationHandler = require('./pagination-handler');
 class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
+    this.artists = [
+      "Cornelis Johannes van der Aa",
+      "Dirk van der Aa",
+      "Jens Aabo"
+    ];
   }
 
   async getArtistList(cookies) {
@@ -96,13 +101,14 @@ class SearchManager {
     try {
       const page = this.browserManager.getPage();
       console.log('🔄 Starting multi-artist search process');
+      console.log(`📚 Processing ${this.artists.length} artists`);
       
       const results = [];
       
       for (const artist of this.artists) {
         console.log(`\n📚 Processing artist: ${artist}`);
         
-        const searchUrl = this.buildSearchUrl(artist);
+        const searchUrl = `https://www.invaluable.com/search?query=${encodeURIComponent(artist)}&priceResult[min]=250&sort=auctionDateAsc`;
         console.log(`🔗 Search URL: ${searchUrl}`);
         
         const artistResult = await this.processArtistSearch(page, searchUrl, cookies);
@@ -125,16 +131,8 @@ class SearchManager {
     }
   }
 
-  buildSearchUrl(artist) {
-    const params = new URLSearchParams({
-      query: artist,
-      priceResult: JSON.stringify({ min: 250 }),
-      sort: 'auctionDateAsc'
-    });
-    return `https://www.invaluable.com/search?${params.toString()}`;
-  }
-
   async processArtistSearch(page, url, cookies) {
+    try {
       
       let initialHtml = null;
       let protectionHtml = null;
