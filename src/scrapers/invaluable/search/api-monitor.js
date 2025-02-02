@@ -4,13 +4,13 @@ class ApiMonitor {
   constructor() {
     this.responses = [];
     this.seenResponses = new Set();
-    this.firstResponseCaptured = false;
+    this.firstResponseSize = 0;
   }
 
   setupRequestInterception(page) {
     console.log('Setting up request interception');
     
-    const handleRequest = async (request) => {
+    page.on('request', async (request) => {
       const url = request.url();
       if (url.includes('catResults')) {
         console.log('  • Intercepted API request:', url);
@@ -23,9 +23,9 @@ class ApiMonitor {
       } else {
         request.continue();
       }
-    };
+    });
     
-    const handleResponse = async (response) => {
+    page.on('response', async (response) => {
       try {
         const url = response.url();
         if (url.includes('catResults') && response.status() === 200) {
@@ -49,27 +49,26 @@ class ApiMonitor {
             if (!this.firstResponseCaptured && responseData.length > 1000) {
               this.responses.push(responseData);
               console.log('    - Saved as first response');
-              this.firstResponseCaptured = true;
+              this.firstResponseSize = responseData.length;
             }
           }).catch(error => {
             console.error('    - Error reading response:', error.message);
           });
         }
       } catch (error) {
-        console.error('    - Error handling response:', error.message);
+        if (!error.message.includes('Target closed')) {
+          console.error('    - Error handling response:', error.message);
+        }
       }
-    };
-    
-    page.on('request', handleRequest);
-    page.on('response', handleResponse);
+    });
   }
 
   hasFirstResponse() {
-    return this.firstResponseCaptured;
+    return this.responses.length > 0;
   }
 
   getFirstResponseSize() {
-    return this.responses[0]?.length || 0;
+    return this.firstResponseSize;
   }
   
   getData() {

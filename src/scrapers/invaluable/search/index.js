@@ -22,18 +22,27 @@ class SearchManager {
       const baseUrl = `https://www.invaluable.com/artists/${firstLetter}/${firstLetter}${subLetter}/?pageType=soldAtAuction`;
       console.log('🌐 Navigating to base page:', baseUrl);
       
+      let pageHtml = '';
+      
       await page.goto(baseUrl, {
         waitUntil: 'networkidle0',
         timeout: constants.navigationTimeout
       });
       
       // Handle protection if needed
-      const html = await page.content();
-      if (html.includes('checking your browser') || 
-          html.includes('Access to this page has been denied')) {
+      pageHtml = await page.content();
+      if (pageHtml.includes('checking your browser') || 
+          pageHtml.includes('Access to this page has been denied')) {
         console.log('🛡️ Protection page detected, handling...');
         await this.browserManager.handleProtection();
         await page.waitForTimeout(2000);
+        
+        // Get updated HTML after protection
+        await page.goto(baseUrl, {
+          waitUntil: 'networkidle0',
+          timeout: constants.navigationTimeout
+        });
+        pageHtml = await page.content();
       }
       
       // Extract subindexes first
@@ -101,6 +110,7 @@ class SearchManager {
       return {
         success: true,
         artists: allArtists,
+        html: pageHtml,
         timestamp: new Date().toISOString(),
         source: 'invaluable',
         section,
@@ -118,29 +128,36 @@ class SearchManager {
   async searchWithCookies(cookies) {
     try {
       const page = this.browserManager.getPage();
-      
-      // Set cookies
-      await page.setCookie(...cookies);
+      const results = [];
       
       console.log('🔄 Starting multi-artist search process');
       console.log(`📚 Processing ${this.artists.length} artists`);
       
-      const results = [];
-      
       for (const artist of this.artists) {
         console.log(`\n📚 Processing artist: ${artist}`);
         
+        // Reset page for each artist
+        await page.setRequestInterception(false);
+        await page.removeAllListeners('request');
+        await page.removeAllListeners('response');
+        
+        // Set fresh cookies for each artist
+        await page.setCookie(...cookies);
+        
+        // Create search URL
         const searchUrl = `https://www.invaluable.com/search?priceResult[min]=250&upcoming=false&query=${encodeURIComponent(artist)}&keyword=${encodeURIComponent(artist)}`;
         console.log(`🔗 Search URL: ${searchUrl}`);
         
+        // Process this artist's search
         const artistResult = await this.processArtistSearch(page, searchUrl, cookies);
         results.push({
           artist,
           ...artistResult
         });
         
-        // Brief pause between artists
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Longer pause between artists to avoid rate limiting
+        console.log('⏳ Pausing before next artist...');
+        await page.waitForTimeout(5000);
       }
       
       return {
@@ -158,22 +175,11 @@ class SearchManager {
       let initialHtml = null;
       let protectionHtml = null;
       let finalHtml = null;
-
-      console.log('🍪 Step 2: Setting authentication cookies');
-      await page.setCookie(...cookies);
+      let apiData = null;
 
       // Set up API monitoring before navigation
       const apiMonitor = new ApiMonitor();
       console.log('👀 Step 3: Enabling API request interception');
-
-      // Ensure request interception is properly set up
-      const isInterceptionEnabled = await page.evaluate(() => {
-        return !!(window.CDP && window.CDP.Network);
-      });
-
-      if (isInterceptionEnabled) {
-        await page.setRequestInterception(false);
-      }
       await page.setRequestInterception(true);
       apiMonitor.setupRequestInterception(page);
       
@@ -181,13 +187,14 @@ class SearchManager {
 
       try {
         console.log('  • Starting navigation with API monitoring');
-        const navigationPromise = page.goto(url, {
+        await page.goto(url, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
-
-        await navigationPromise;
         console.log('  • Navigation complete');
+
+        // Wait for any remaining network activity
+        await page.waitForTimeout(2000);
 
         console.log('📄 Step 5: Capturing initial HTML');
         initialHtml = await page.content();
@@ -200,7 +207,10 @@ class SearchManager {
           protectionHtml = initialHtml;
           console.log('🤖 Step 6b: Processing protection challenge');
           await this.browserManager.handleProtection();
+          await page.waitForTimeout(2000);
           console.log('✅ Step 6c: Protection cleared');
+          // Re-navigate after protection
+          await page.goto(url, { waitUntil: 'networkidle0', timeout: constants.navigationTimeout });
           initialHtml = await page.content();
         } else {
           console.log('✅ Step 6: No protection detected');
@@ -214,6 +224,9 @@ class SearchManager {
           console.log('⚠️ Step 7: No API response captured during navigation');
         }
 
+        // Wait for any dynamic content to load
+        await page.waitForTimeout(2000);
+
         // Capture final HTML
         console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
@@ -223,19 +236,21 @@ class SearchManager {
         console.log('❌ Error during process:', error.message);
       }
 
-      try {
-        // Clean up request interception
-        await page.removeAllListeners('request');
-        await page.removeAllListeners('response');
-        await page.setRequestInterception(false);
-      } catch (error) {
-        console.log('⚠️ Cleanup warning:', error.message);
       }
 
       const apiData = apiMonitor.getData();
       console.log('📊 Step 9: Final status:');
       console.log(`  • API responses captured: ${apiData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
+
+      // Clean up request interception
+      try {
+        await page.removeAllListeners('request');
+        await page.removeAllListeners('response');
+        await page.setRequestInterception(false);
+      } catch (error) {
+        console.log('⚠️ Cleanup warning:', error.message);
+      }
 
       return {
         html: {
