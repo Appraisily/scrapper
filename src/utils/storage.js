@@ -113,17 +113,33 @@ class CloudStorage {
   async saveJsonFile(filename, data) {
     try {
       if (!this.initialized) {
+        console.log('Initializing storage for JSON save');
         await this.initialize();
       }
 
+      console.log(`Saving JSON file: ${filename}`);
+      
+      // Create parent directories if they don't exist
+      const file = this.storage.bucket(this.bucketName).file(filename);
+      
+      // Check if file exists
+      const [exists] = await file.exists();
+      if (exists) {
+        console.log('File already exists, updating content');
+      }
+      
+      // Save the file
       const file = this.storage.bucket(this.bucketName).file(filename);
       await file.save(JSON.stringify(data, null, 2));
+      console.log('File saved successfully');
 
+      // Generate signed URL
       const [url] = await file.getSignedUrl({
         version: 'v4',
         action: 'read',
         expires: Date.now() + 7 * 24 * 60 * 60 * 1000
       });
+      console.log('Generated signed URL');
 
       return url;
     } catch (error) {

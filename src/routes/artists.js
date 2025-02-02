@@ -11,21 +11,23 @@ router.get('/', async (req, res) => {
     console.log('Fetching Invaluable artist list...');
 
     const result = await invaluableScraper.getArtistList();
+    const { section } = result;
     
     // Save to storage
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `artists/invaluable-artists-aa-${timestamp}.json`;
+    const filename = `artists/${section}.json`;
     
     const url = await req.app.locals.storage.saveJsonFile(filename, result);
     
     res.json({
       success: true,
-      message: 'Artist list retrieved successfully',
+      message: `Artist list for section ${section} retrieved successfully`,
       data: result,
       file: {
         path: filename,
         url
-      }
+      },
+      section
     });
     
   } catch (error) {

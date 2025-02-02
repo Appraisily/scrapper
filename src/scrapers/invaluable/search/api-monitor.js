@@ -10,7 +10,7 @@ class ApiMonitor {
   setupRequestInterception(page) {
     console.log('Setting up request interception');
     
-    page.on('request', request => {
+    const handleRequest = async (request) => {
       const url = request.url();
       if (url.includes('catResults')) {
         console.log('  • Intercepted API request:', url);
@@ -23,9 +23,9 @@ class ApiMonitor {
       } else {
         request.continue();
       }
-    });
+    };
     
-    page.on('response', response => {
+    const handleResponse = async (response) => {
       try {
         const url = response.url();
         if (url.includes('catResults') && response.status() === 200) {
@@ -58,7 +58,10 @@ class ApiMonitor {
       } catch (error) {
         console.error('    - Error handling response:', error.message);
       }
-    });
+    };
+    
+    page.on('request', handleRequest);
+    page.on('response', handleResponse);
   }
 
   hasFirstResponse() {
