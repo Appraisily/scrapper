@@ -5,19 +5,16 @@ class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
     this.artists = [
-      "Cornelis Johannes van der Aa",
-      "Dirk van der Aa",
-      "Jens Aabo"
+      'Cornelis Johannes van der Aa',
+      'Dirk van der Aa',
+      'Jens Aabo'
     ];
   }
 
-  async getArtistList(cookies) {
+  async getArtistList() {
     try {
       const page = this.browserManager.getPage();
       console.log('🔄 Starting artist list extraction');
-      
-      // Set cookies
-      await page.setCookie(...cookies);
       
       const url = 'https://www.invaluable.com/artists/A/Aa/?pageType=soldAtAuction';
       console.log('🌐 Navigating to artists page:', url);
@@ -42,16 +39,24 @@ class SearchManager {
       // Extract artist data
       const artists = await page.evaluate(() => {
         const items = Array.from(document.querySelectorAll('.ais-Hits-item'));
+        console.log(`Found ${items.length} artist items in DOM`);
+        
         return items.map(item => {
           const link = item.querySelector('a');
           const span = item.querySelector('span');
-          if (!link || !span) return null;
+          if (!link || !span) {
+            console.log('Missing link or span element');
+            return null;
+          }
           
           const url = link.href;
           const fullText = span.textContent;
           const match = fullText.match(/^(.+?)\s*\((\d+)\)$/);
           
-          if (!match) return null;
+          if (!match) {
+            console.log(`Invalid text format: ${fullText}`);
+            return null;
+          }
           
           return {
             name: match[1].trim(),
@@ -64,11 +69,13 @@ class SearchManager {
       console.log(`📝 Found ${artists.length} artists`);
       
       return {
+        success: true,
         artists,
         timestamp: new Date().toISOString(),
         source: 'invaluable',
         section: 'A/Aa',
-        url
+        url,
+        totalFound: artists.length
       };
       
     } catch (error) {
@@ -80,6 +87,10 @@ class SearchManager {
   async searchWithCookies(cookies) {
     try {
       const page = this.browserManager.getPage();
+      
+      // Set cookies
+      await page.setCookie(...cookies);
+      
       console.log('🔄 Starting multi-artist search process');
       console.log(`📚 Processing ${this.artists.length} artists`);
       
@@ -113,7 +124,6 @@ class SearchManager {
 
   async processArtistSearch(page, url, cookies) {
     try {
-      
       let initialHtml = null;
       let protectionHtml = null;
       let finalHtml = null;
@@ -121,22 +131,29 @@ class SearchManager {
       console.log('🍪 Step 2: Setting authentication cookies');
       await page.setCookie(...cookies);
 
+      // Set up API monitoring before navigation
+      const apiMonitor = new ApiMonitor();
       console.log('👀 Step 3: Enabling API request interception');
       await page.setRequestInterception(true);
-      const apiMonitor = new ApiMonitor();
       apiMonitor.setupRequestInterception(page);
-
+      
       console.log('🌐 Step 4: Navigating to search URL');
 
       try {
-        await page.goto(url, {
+        console.log('  • Starting navigation with API monitoring');
+        const navigationPromise = page.goto(url, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
 
-        console.log('📄 Step 5: Initial page HTML captured');
+        await navigationPromise;
+        console.log('  • Navigation complete');
+
+        console.log('📄 Step 5: Capturing initial HTML');
         initialHtml = await page.content();
-        
+        console.log(`  • Size: ${(initialHtml.length / 1024).toFixed(2)} KB`);
+
+        // Check for protection page
         if (initialHtml.includes('checking your browser') || 
             initialHtml.includes('Access to this page has been denied')) {
           console.log('🛡️ Step 6a: Protection page detected');
@@ -149,113 +166,35 @@ class SearchManager {
           console.log('✅ Step 6: No protection detected');
         }
 
-        console.log('⏳ Step 7: Waiting for first API response');
-        
-        try {
-          if (apiMonitor.hasFirstResponse()) {
-            console.log('📥 Step 8: First API response already captured');
-          } else {
-            await page.waitForResponse(
-              response => response.url().includes('catResults'),
-              { timeout: constants.defaultTimeout }
-            );
-            console.log('📥 Step 8: First API response captured');
-          }
-        } catch (error) {
-          console.log('⚠️ Step 8 failed: Timeout waiting for first API response');
-        }
-
-        console.log('⌛ Step 9: Brief pause before load more');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const loadMoreButton = await page.$('.load-more-button-holder button.load-more-btn');
-        if (loadMoreButton) {
-          console.log('🔍 Step 10a: Load more button found');
-          
-          const initialCount = await page.evaluate(() => {
-            const countText = document.querySelector('.count-description .total-count')?.textContent;
-            const count = countText ? parseInt(countText.replace(/,/g, ''), 10) : 0;
-            console.log(`  • 📊 Found count text: "${countText}"`);
-            return count;
-          });
-          console.log(`  • 📈 Total available items: ${initialCount.toLocaleString()}`);
-          
-          try {
-            console.log('🖱️ Step 10b: Clicking load more button');
-            console.log('  • Waiting for button to be ready...');
-            await Promise.all([
-              loadMoreButton.click(),
-              page.waitForFunction(() => {
-                const btn = document.querySelector('.load-more-button-holder button.load-more-btn');
-                return btn && !btn.disabled;
-              }, { timeout: constants.defaultTimeout })
-            ]);
-            console.log('  • ✅ Button clicked successfully');
-            
-            console.log('⏳ Step 10c: Waiting for second API response');
-            await page.waitForResponse(
-              response => response.url().includes('catResults'),
-              { timeout: constants.defaultTimeout }
-            );
-            console.log('📥 Step 10d: Second API response captured');
-            
-            // Wait for new items to be rendered
-            console.log('  • Waiting for new items to appear...');
-            await page.waitForFunction((prevCount) => {
-              const results = document.querySelectorAll('.lot-search-result');
-              return results.length > prevCount;
-            }, { timeout: constants.defaultTimeout }, initialCount);
-            console.log('  • ✅ New items detected');
-            
-            // Capture intermediate HTML after load more
-            const intermediateHtml = await page.content();
-            console.log('📄 Step 10e: Captured intermediate HTML state');
-            console.log(`  • Size: ${(intermediateHtml.length / 1024).toFixed(2)} KB`);
-            
-            // Get updated count
-            const newCount = await page.evaluate(() => {
-              const results = document.querySelectorAll('.lot-search-result');
-              console.log(`Found ${results.length} items in DOM`);
-              return results.length;
-            });
-            console.log(`  • 📊 Items loaded: ${newCount.toLocaleString()}`);
-            console.log(`  • 📈 Items added: ${(newCount - initialCount).toLocaleString()}`);
-            
-            // Add intermediate HTML to result
-            result.html.afterLoadMore = intermediateHtml;
-          } catch (error) {
-            console.log('❌ Step 10 failed:');
-            console.log(`  • Error: ${error.message}`);
-            console.log(`  • Stack: ${error.stack}`);
-          }
+        // Check if we got the API response during navigation
+        if (apiMonitor.hasFirstResponse()) {
+          console.log('📥 Step 7: API response captured during navigation');
+          console.log(`  • Response size: ${(apiMonitor.getFirstResponseSize() / 1024).toFixed(2)} KB`);
         } else {
-          console.log('ℹ️ Step 10: No load more button found');
-          console.log('  • Checked selector: .load-more-button-holder button.load-more-btn');
+          console.log('⚠️ Step 7: No API response captured during navigation');
         }
 
-        console.log('📄 Step 11: Capturing final page state');
+        // Capture final HTML
+        console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
         console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
 
       } catch (error) {
-        console.log('❌ Error during process:');
-        console.log(`  • Message: ${error.message}`);
-        console.log(`  • Stack: ${error.stack}`);
+        console.log('❌ Error during process:', error.message);
       }
 
+      // Disable request interception
+      await page.setRequestInterception(false);
+
       const apiData = apiMonitor.getData();
-      console.log('📊 Step 12: Final status:');
-      console.log(`  • Total unique responses: ${apiData.responses.length}`);
-      console.log(`  • Response sizes: ${apiData.responses.map(r => (r.length / 1024).toFixed(2) + ' KB').join(', ')}`);
+      console.log('📊 Step 9: Final status:');
+      console.log(`  • API responses captured: ${apiData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
-      console.log(`  • Second response: ${apiMonitor.hasSecondResponse() ? '✅' : '❌'}`);
-      console.log(`  • Total seen responses: ${apiMonitor.seenResponses.size}`);
 
       return {
         html: {
           initial: initialHtml,
           protection: protectionHtml,
-          afterLoadMore: null,
           final: finalHtml
         },
         apiData,
@@ -267,6 +206,3 @@ class SearchManager {
       throw error;
     }
   }
-}
-
-module.exports = SearchManager;

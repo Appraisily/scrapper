@@ -5,14 +5,15 @@ class ApiMonitor {
     this.responses = [];
     this.seenResponses = new Set();
     this.firstResponseCaptured = false;
-    this.secondResponseCaptured = false;
   }
 
   setupRequestInterception(page) {
+    console.log('Setting up request interception');
+    
     page.on('request', async (request) => {
-      // Add required headers for API requests
       const url = request.url();
       if (url.includes('catResults')) {
+        console.log('  • Intercepted API request:', url);
         const headers = {
           ...request.headers(),
           'Accept': 'application/json',
@@ -27,34 +28,33 @@ class ApiMonitor {
     page.on('response', async response => {
       try {
         const url = response.url();
-        if (url.includes('catResults')) {
+        if (url.includes('catResults') && response.status() === 200) {
+          console.log('  • Received API response:', url);
           const responseData = await response.text();
+          
+          if (responseData.length < 1000) {
+            console.log('    - Skipping small response:', responseData.length, 'bytes');
+            return;
+          }
+          
           const responseHash = this.hashResponse(responseData);
 
-          // Skip if we've seen this exact response before
           if (this.seenResponses.has(responseHash)) {
+            console.log('    - Duplicate response detected');
             return;
           }
 
-          // Add to seen responses
           this.seenResponses.add(responseHash);
+          console.log('    - New unique response:', (responseData.length / 1024).toFixed(2), 'KB');
 
           if (!this.firstResponseCaptured && responseData.length > 1000) {
             this.responses.push(responseData);
-            console.log('📥 Captured first API response');
-            console.log(`  • Size: ${(responseData.length / 1024).toFixed(2)} KB`);
+            console.log('    - Saved as first response');
             this.firstResponseCaptured = true;
-          } else if (!this.secondResponseCaptured && this.firstResponseCaptured && 
-                     responseData.length > 1000 && responseHash !== this.hashResponse(this.responses[0])) {
-            this.responses.push(responseData);
-            console.log('📥 Captured second API response');
-            console.log(`  • Size: ${(responseData.length / 1024).toFixed(2)} KB`);
-            this.secondResponseCaptured = true;
           }
         }
       } catch (error) {
-        console.error('❌ Error handling response:', error.message);
-        console.error('  Stack:', error.stack);
+        console.error('    - Error handling response:', error.message);
       }
     });
   }
@@ -63,14 +63,14 @@ class ApiMonitor {
     return this.firstResponseCaptured;
   }
 
-  hasSecondResponse() {
-    return this.secondResponseCaptured;
+  getFirstResponseSize() {
+    return this.responses[0]?.length || 0;
   }
   
   getData() {
     return {
       responses: this.responses
-    }
+    };
   }
 
   hashResponse(responseData) {
