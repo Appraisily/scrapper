@@ -29,12 +29,12 @@ class SearchManager {
   async searchWithCookies(url, cookies) {
     try {
       const page = this.browserManager.getPage();
-      
+
       // Enable request interception to capture API calls
       await page.setRequestInterception(true);
       const apiMonitor = new ApiMonitor();
       apiMonitor.setupRequestInterception(page);
-      
+
       await page.setCookie(...cookies);
       console.log('Navigating to search URL with cookies...');
       try {
@@ -46,6 +46,57 @@ class SearchManager {
         console.log('Navigation timeout or error, capturing data anyway');
       }
       
+      // Wait for first page to load
+      await apiMonitor.waitForPage(0);
+      
+      // Get total pages from first response
+      const stats = apiMonitor.getStats();
+      console.log('Initial search stats:', stats);
+      
+      // Get page 2 (we already have page 1)
+      if (stats.totalPages > 1) {
+        // Add random delay between requests (2-4 seconds)
+        const delay = 2000 + Math.floor(Math.random() * 2000);
+        console.log(`Waiting ${delay}ms before requesting page 2...`);
+        await new Promise(r => setTimeout(r, delay));
+        
+        // Modify the request data for page 2
+        const postData = {
+          "requests": [{
+            "indexName": "archive_prod",
+            "params": {
+              "attributesToRetrieve": ["watched","dateTimeUTCUnix","currencyCode","dateTimeLocal","lotTitle","lotNumber","lotRef","photoPath","houseName","currencySymbol","currencyCode","priceResult","saleType"],
+              "clickAnalytics": true,
+              "facets": ["hasImage","supercategoryName","artistName","dateTimeUTCUnix","houseName","countryName","currencyCode","priceResult","Fine Art","Asian Art & Antiques","Decorative Art","Collectibles","Furniture","Jewelry","Dolls%2C Bears & Toys","Firearms","Automobiles%2C Boats & Airplanes","Commercial & Industrial","Wines & Spirits"],
+              "filters": "banned:false AND dateTimeUTCUnix<1738508418 AND onlineOnly:false AND channelIDs:1 AND closed:true",
+              "highlightPostTag": "</ais-highlight-0000000000>",
+              "highlightPreTag": "<ais-highlight-0000000000>",
+              "hitsPerPage": 96,
+              "maxValuesPerFacet": 50,
+              "numericFilters": ["dateTimeUTCUnix>=1577833200","priceResult>=250"],
+              "page": 1,
+              "query": "fine art",
+              "userToken": "9166383",
+              "getRankingInfo": true
+            }
+          }]
+        };
+
+        await page.evaluate(data => {
+          return fetch('https://www.invaluable.com/catResults', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+          });
+        }, postData);
+        
+        // Wait for page 2 data
+        await apiMonitor.waitForPage(1);
+      }
+
       // Capture the raw HTML regardless of load status
       const rawHtml = await page.content();
       const apiData = apiMonitor.getData();
