@@ -3,9 +3,18 @@ const cors = require('cors');
 const InvaluableScraper = require('./scrapers/invaluable');
 const storage = require('./utils/storage');
 
-// Configure port from environment variable with fallback
-const port = process.env.PORT || 8080;
-console.log(`Starting server with port: ${port}`);
+const requiredEnvVars = [
+  'GOOGLE_CLOUD_PROJECT',
+  'STORAGE_BUCKET'
+];
+
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error('Missing required environment variables:', missingEnvVars.join(', '));
+  process.exit(1);
+}
+
+const port = 8080;
 
 const app = express();
 
@@ -147,7 +156,6 @@ app.get('/api/invaluable', async (req, res) => {
 // Start the server
 const server = app.listen(port, '0.0.0.0', () => {
   console.log(`Server is now listening on port ${port}`);
-  console.log('Environment:', process.env.NODE_ENV);
   console.log('Google Cloud Project:', process.env.GOOGLE_CLOUD_PROJECT);
 });
 

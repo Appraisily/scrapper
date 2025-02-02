@@ -29,75 +29,37 @@ class SearchManager {
   async searchWithCookies(url, cookies) {
     try {
       const page = this.browserManager.getPage();
+      
+      // Enable request interception to capture API calls
       await page.setRequestInterception(true);
-
-      // Set up API monitoring
       const apiMonitor = new ApiMonitor();
       apiMonitor.setupRequestInterception(page);
       
-      // Set cookies and navigate
       await page.setCookie(...cookies);
       console.log('Navigating to search URL with cookies...');
-      await page.goto(url, {
-        waitUntil: 'networkidle0',
-        timeout: constants.navigationTimeout
-      });
-      
-      // Wait for API responses
-      await page.evaluate(() => new Promise(r => setTimeout(r, 5000)));
-      
-      // Check for API data
-      const apiData = apiMonitor.getData();
-      if (apiData.apiResponse) {
-        console.log('Using API response instead of HTML');
-        return JSON.stringify({
-          ...apiData,
-          timestamp: new Date().toISOString()
+      try {
+        await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: constants.navigationTimeout
         });
-      }
-
-      // Handle protection if needed
-      await this.handleProtectionIfNeeded(page);
-
-      // Set up pagination
-      const paginationHandler = new PaginationHandler(page);
-      
-      // Get initial batch
-      console.log('Saving initial batch of results...');
-      const initialHtml = await page.content();
-      const initialCount = await paginationHandler.getInitialCount();
-      console.log(`Initial items loaded: ${initialCount}`);
-      
-      // Check for load more
-      const loadMoreButton = await paginationHandler.waitForLoadMoreButton();
-      if (!loadMoreButton) {
-        return initialHtml;
+      } catch (error) {
+        console.log('Navigation timeout or error, capturing data anyway');
       }
       
-      // Get total count
-      const totalCount = await paginationHandler.getTotalAvailable();
-      console.log(`Total available items: ${totalCount}`);
-      
-      // Load next batch
-      const newCount = await paginationHandler.loadNextBatch(initialCount);
-      
-      // Get final HTML
-      console.log('Saving second batch of results...');
-      const updatedHtml = await page.content();
-      
+      // Capture the raw HTML regardless of load status
+      const rawHtml = await page.content();
+      const apiData = apiMonitor.getData();
+
       return JSON.stringify({
-        initialBatch: initialHtml,
-        secondBatch: updatedHtml,
-        totalAvailable: totalCount
+        html: rawHtml,
+        apiData,
+        timestamp: new Date().toISOString()
       });
 
     } catch (error) {
       console.error('Search with cookies error:', error);
       throw error;
     }
-  }
-
-  buildSearchUrl(params) {
     const searchUrl = new URL('https://www.invaluable.com/search');
     searchUrl.searchParams.set('currencyCode', params.currency || 'USD');
     searchUrl.searchParams.set('priceResult[min]', params.minPrice || '250');
