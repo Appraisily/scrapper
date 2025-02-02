@@ -103,19 +103,7 @@ app.get('/api/invaluable', async (req, res) => {
     ];
 
     const searchUrl = 'https://www.invaluable.com/search?priceResult[min]=250&dateTimeUTCUnix[min]=1577833200&dateType=Custom&upcoming=false&sort=auctionDateAsc&query=fine%20art&keyword=fine%20art';
-    const html = await invaluableScraper.searchWithCookies(searchUrl, cookies);
-
-    // Parse the captured data
-    const data = JSON.parse(html);
-    
-    // Extract API data if available
-    const apiData = data.apiData?.catResults?.response;
-    if (apiData) {
-      console.log('Successfully captured Algolia search results:', {
-        totalHits: apiData.results?.[0]?.nbHits,
-        totalPages: apiData.results?.[0]?.nbPages
-      });
-    }
+    const result = await invaluableScraper.searchWithCookies(searchUrl, cookies);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     
@@ -135,29 +123,24 @@ app.get('/api/invaluable', async (req, res) => {
         dateType: 'Custom',
         sort: 'auctionDateAsc'
       },
-      apiStats: {
-        totalHits: apiData?.results?.[0]?.nbHits,
-        totalPages: apiData?.results?.[0]?.nbPages,
-        processingTimeMS: apiData?.results?.[0]?.processingTimeMS
-      },
       cookies: cookies.map(({ name, domain }) => ({ name, domain })), // Exclude cookie values for security
       status: 'pending_processing'
     };
 
     // Save both HTML and metadata
-    const result = await storage.saveSearchData(html, metadata);
+    const savedData = await storage.saveSearchData(result, metadata);
     
     res.json({
       success: true,
       message: 'Search results saved successfully',
-      searchId: result.searchId,
+      searchId: savedData.searchId,
       files: {
-        html: result.htmlPath,
-        metadata: result.metadataPath
+        html: savedData.htmlPath,
+        metadata: savedData.metadataPath
       },
       urls: {
-        html: result.htmlUrl,
-        metadata: result.metadataUrl
+        html: savedData.htmlUrl,
+        metadata: savedData.metadataUrl
       },
       metadata
     });
