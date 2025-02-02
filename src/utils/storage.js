@@ -3,7 +3,7 @@ const { Storage } = require('@google-cloud/storage');
 class CloudStorage {
   constructor() {
     this.storage = new Storage();
-    this.bucketName = process.env.STORAGE_BUCKET;
+    this.bucketName = process.env.STORAGE_BUCKET || 'invaluable-html-archive';
     this.initialized = false;
   }
 

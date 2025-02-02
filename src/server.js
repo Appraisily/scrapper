@@ -3,18 +3,15 @@ const cors = require('cors');
 const InvaluableScraper = require('./scrapers/invaluable');
 const storage = require('./utils/storage');
 
-const requiredEnvVars = [
-  'GOOGLE_CLOUD_PROJECT',
-  'STORAGE_BUCKET'
-];
+const port = process.env.PORT || 8080;
+
+const requiredEnvVars = ['GOOGLE_CLOUD_PROJECT'];
 
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 if (missingEnvVars.length > 0) {
   console.error('Missing required environment variables:', missingEnvVars.join(', '));
   process.exit(1);
 }
-
-const port = 8080;
 
 const app = express();
 

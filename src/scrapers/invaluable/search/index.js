@@ -60,13 +60,6 @@ class SearchManager {
       console.error('Search with cookies error:', error);
       throw error;
     }
-    const searchUrl = new URL('https://www.invaluable.com/search');
-    searchUrl.searchParams.set('currencyCode', params.currency || 'USD');
-    searchUrl.searchParams.set('priceResult[min]', params.minPrice || '250');
-    searchUrl.searchParams.set('upcoming', params.upcoming || 'false');
-    searchUrl.searchParams.set('query', params.query || 'fine art');
-    searchUrl.searchParams.set('keyword', params.keyword || 'fine art');
-    return searchUrl;
   }
 
   async handleProtectionIfNeeded(page) {
