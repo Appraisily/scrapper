@@ -74,7 +74,6 @@ class SearchManager {
         
         // Wait for first API response with timeout
         try {
-          if (!apiMonitor.hasFirstResponse()) {
           if (apiMonitor.hasFirstResponse()) {
             console.log('📥 Step 8: First API response already captured');
           } else {
