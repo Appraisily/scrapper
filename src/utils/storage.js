@@ -33,29 +33,35 @@ class CloudStorage {
       const searchId = `${metadata.source}-${metadata.query}-${timestamp}`;
 
       // Parse the captured data
+      let parsedData;
       try {
-        const data = JSON.parse(html);
+        parsedData = typeof html === 'string' ? JSON.parse(html) : html;
+      } catch (error) {
+        console.error('Error parsing captured data:', error);
+        parsedData = { html: '', apiData: { request: null, response: null } };
+      }
         
+      if (parsedData && parsedData.html) {
         // Save raw HTML
         const htmlFilename = `${baseFolder}/html/${searchId}.html`;
         const htmlFile = this.storage.bucket(this.bucketName).file(htmlFilename);
-        await htmlFile.save(data.html);
+        await htmlFile.save(parsedData.html);
         
         // Save API data if present
-        const apiFilename = `${baseFolder}/api/${searchId}.json`;
-        const apiFile = this.storage.bucket(this.bucketName).file(apiFilename);
-        await apiFile.save(JSON.stringify(data.apiData, null, 2));
+        if (parsedData.apiData) {
+          const apiFilename = `${baseFolder}/api/${searchId}.json`;
+          const apiFile = this.storage.bucket(this.bucketName).file(apiFilename);
+          await apiFile.save(JSON.stringify(parsedData.apiData, null, 2));
+        }
         
         // Update metadata
-        metadata.captureTimestamp = data.timestamp;
+        metadata.captureTimestamp = parsedData.timestamp;
         metadata.files = {
-          html: htmlFilename,
-          api: apiFilename
+          html: htmlFilename
         };
-        
-      } catch (e) {
-        console.error('Error parsing captured data:', e);
-        throw e;
+        if (parsedData.apiData) {
+          metadata.files.api = apiFilename;
+        }
       }
 
       // Save metadata file

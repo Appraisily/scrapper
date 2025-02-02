@@ -35,9 +35,11 @@ class SearchManager {
       const apiMonitor = new ApiMonitor();
       apiMonitor.setupRequestInterception(page);
 
+      // Set initial HTML capture
+      let initialHtml = '';
+
       await page.setCookie(...cookies);
       console.log('Navigating to search URL with cookies...');
-      let pageHtml = '';
 
       try {
         // Initial page load - we only need this to trigger the first API call
@@ -46,8 +48,9 @@ class SearchManager {
           timeout: constants.navigationTimeout
         });
         
-        // Capture initial page HTML
-        pageHtml = await page.content();
+        // Only capture initial HTML to verify access
+        initialHtml = await page.content() || '';
+        console.log('Initial page loaded, waiting for first API response...');
         
         // Wait for initial API response
         await page.waitForResponse(
@@ -56,39 +59,40 @@ class SearchManager {
         );
 
         // Add a natural delay before the next request
-        await page.waitForTimeout(2000 + Math.random() * 2000);
+        await page.evaluate(ms => new Promise(r => setTimeout(r, ms)), 2000 + Math.random() * 2000);
 
-        // Trigger page 2 API call by evaluating script
-        await page.evaluate(() => {
-          window.dispatchEvent(new CustomEvent('load-more'));
-        });
+        // Find and click the load more button
+        const loadMoreButton = await page.$('button.load-more-btn');
+        if (loadMoreButton) {
+          console.log('Found load more button, clicking...');
+          await loadMoreButton.click();
         
-        // Wait for second API response
-        await page.waitForResponse(
-          response => response.url().includes('catResults'),
-          { timeout: constants.defaultTimeout }
-        );
-
-        // Capture final HTML after all data is loaded
-        pageHtml = await page.content();
+          // Wait for second API response
+          await page.waitForResponse(
+            response => response.url().includes('catResults'),
+            { timeout: constants.defaultTimeout }
+          );
+          console.log('Second API response captured');
+        } else {
+          console.log('No load more button found');
+        }
 
       } catch (error) {
-        console.log('Navigation timeout or error, capturing data anyway');
-        // Capture HTML even if there was an error
-        if (!pageHtml) {
-          pageHtml = await page.content();
-        }
+        console.log('Error during navigation or API capture:', error.message);
       }
 
       // Get the captured API data
       const apiData = apiMonitor.getData();
 
-      return JSON.stringify({
-        html: pageHtml,
-        catResults: apiData,
+      const result = {
+        html: initialHtml, // Only store initial HTML for verification
+        apiData: {
+          response: apiData.response || null
+        },
         timestamp: new Date().toISOString()
-      });
+      };
 
+      return result;
     } catch (error) {
       console.error('Search with cookies error:', error);
       throw error;

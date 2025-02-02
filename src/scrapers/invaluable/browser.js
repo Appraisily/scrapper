@@ -124,8 +124,8 @@ class BrowserManager {
             Math.random() * 1920,
             Math.random() * 1080,
             { steps: 10 }
-          );
-          await page.waitForTimeout(Math.random() * 200 + 100);
+        );
+        await page.evaluate(ms => new Promise(r => setTimeout(r, ms)), Math.random() * 200 + 100);
         }
 
         // Random scrolling
