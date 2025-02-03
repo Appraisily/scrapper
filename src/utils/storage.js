@@ -113,7 +113,7 @@ class CloudStorage {
   async saveJsonFile(filename, data) {
     try {
       if (!this.initialized) {
-        console.log('Initializing storage for JSON save');
+        console.log('Initializing storage');
         await this.initialize();
       }
 
@@ -143,6 +143,28 @@ class CloudStorage {
       return url;
     } catch (error) {
       console.error('[Storage] Error saving JSON file:', error);
+      throw error;
+    }
+  }
+
+  async saveFile(filename, content) {
+    try {
+      if (!this.initialized) {
+        console.log('Initializing storage');
+        await this.initialize();
+      }
+
+      console.log(`Saving file: ${filename}`);
+      
+      const file = this.storage.bucket(this.bucketName).file(filename);
+      
+      // Save the file
+      await file.save(content);
+      console.log('File saved successfully');
+
+      return true;
+    } catch (error) {
+      console.error('[Storage] Error saving file:', error);
       throw error;
     }
   }

@@ -1,39 +1,51 @@
 const BrowserManager = require('./browser');
 const AuthManager = require('./auth');
-const SearchManager = require('./search');
+const ArtistListScraper = require('./artist-list');
+const SearchScraper = require('./search');
 
 class InvaluableScraper {
   constructor(storage) {
-    this.browser = new BrowserManager();
-    this.auth = null;
-    this.search = null;
+    if (!storage) {
+      throw new Error('Storage instance is required');
+    }
     this.storage = storage;
+    this.artistListScraper = null;
+    this.searchScraper = null;
   }
 
   async initialize() {
-    await this.browser.initialize();
-    this.auth = new AuthManager(this.browser);
-    this.search = new SearchManager(this.browser, this.storage);
+    // Each scraper gets its own browser instance
+    const artistListBrowser = new BrowserManager();
+    const searchBrowser = new BrowserManager();
+    
+    await Promise.all([
+      artistListBrowser.initialize(),
+      searchBrowser.initialize()
+    ]);
+
+    this.artistListScraper = new ArtistListScraper(artistListBrowser, this.storage);
+    this.searchScraper = new SearchScraper(searchBrowser, this.storage);
   }
 
   async close() {
-    await this.browser.close();
-  }
-
-  async login(email, password) {
-    return this.auth.login(email, password);
-  }
-
-  async searchItems(params) {
-    return this.search.searchItems(params);
-  }
-
-  async searchWithCookies(url, cookies) {
-    return this.search.searchWithCookies(url, cookies);
+    await Promise.all([
+      this.artistListScraper?.close(),
+      this.searchScraper?.close()
+    ]);
   }
 
   async getArtistList() {
-    return this.search.getArtistList();
+    if (!this.artistListScraper) {
+      throw new Error('Artist list scraper not initialized');
+    }
+    return this.artistListScraper.extractArtistList();
+  }
+
+  async searchWithCookies(cookies) {
+    if (!this.searchScraper) {
+      throw new Error('Search scraper not initialized');
+    }
+    return this.searchScraper.searchWithCookies(cookies);
   }
 }
 

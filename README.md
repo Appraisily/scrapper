@@ -14,29 +14,22 @@ This scraper is designed to capture both HTML content and API responses from Inv
 ## Features
 
 ### Core Functionality
-- **Artist Directory Extraction**
-  - Alphabetical artist browsing
-  - Subindex processing
-  - Artist count tracking
-  - Comprehensive data collection
 
-- **Search Results Capture**
-  - Multiple artist processing
-  - Price range filtering
-  - Auction date sorting
-  - Pagination handling
+#### Artist Directory Scraper
+- Alphabetical artist browsing
+- Subindex processing (Aa, Ab, etc.)
+- Artist count tracking
+- HTML state capture (initial, protection, final)
+- Automatic retry logic
+- Protection page handling
 
-- **HTML State Tracking**
-  - Initial page state
-  - Protection/challenge pages
-  - Final page state
-  - State transition logging
-
-- **API Response Capture**
-  - Search result responses
-  - Raw JSON preservation
-  - Response deduplication
-  - Size validation
+#### Search Scraper
+- Multi-artist search processing
+- Cookie-based authentication
+- API response monitoring
+- Price range filtering
+- HTML state tracking
+- Independent browser instance
 
 ### Protection Handling
 - Cloudflare challenge bypass
@@ -48,6 +41,7 @@ This scraper is designed to capture both HTML content and API responses from Inv
 ### Technical Features
 
 #### Browser Automation
+- Independent browser instances per scraper
 - Puppeteer with Stealth Plugin
 - Human behavior simulation:
   - Random mouse movements
@@ -180,23 +174,43 @@ Example Response:
 }
 ```
 
-## Process Flow
+## Architecture
 
-The scraper follows these steps:
+### Scraper Components
 
-1. 🔄 Initialize browser and storage
-2. 🌐 Process each request:
-   - Artist List:
-     1. Navigate to artist directory
-     2. Handle protection if needed
-     3. Extract subindexes
-     4. Process each subindex
-     5. Save HTML states and results
-   - Search:
-     1. Process each artist
-     2. Monitor API responses
-     3. Handle protection
-     4. Save results and metadata
+#### Artist List Scraper
+- Dedicated browser instance
+- Independent state management
+- Handles artist directory crawling
+- Manages subindex processing
+- Saves HTML states and results
+
+#### Search Scraper
+- Separate browser instance
+- Cookie-based authentication
+- API response monitoring
+- Multi-artist search processing
+- Independent storage operations
+
+### Process Flow
+
+1. Server Initialization
+   - Create storage connection
+   - Initialize separate browser instances
+   - Set up API endpoints
+
+2. Artist List Process
+   - Navigate to artist directory
+   - Handle protection if needed
+   - Extract subindexes
+   - Process each subindex
+   - Save HTML states and results
+
+3. Search Process
+   - Process each artist independently
+   - Monitor API responses
+   - Handle protection
+   - Save results and metadata
 
 ## Error Handling
 
@@ -209,6 +223,7 @@ The system includes robust error handling for:
 - Rate limiting
 
 Key features:
+- Independent error handling per scraper
 - Automatic retries (3 attempts)
 - Debug screenshots
 - State preservation
@@ -253,12 +268,11 @@ gcloud builds submit --config cloudbuild.yaml
 │   │       ├── browser.js       # Browser management
 │   │       ├── auth.js          # Authentication handling
 │   │       ├── utils.js         # Shared utilities
-│   │       └── search/
-│   │           ├── index.js     # Search manager
-│   │           ├── artist-processor.js    # Artist search
-│   │           ├── artist-list-extractor.js # Directory crawling
+│   │       ├── artist-list/     # Artist list scraper
+│   │       │   └── index.js     # Artist list implementation
+│   │       └── search/          # Search scraper
+│   │           ├── index.js     # Search implementation
 │   │           ├── api-monitor.js # API response capture
-│   │           └── result-saver.js # Storage handling
 │   └── utils/
 │       └── storage.js           # GCS integration
 ├── Dockerfile                    # Container configuration
