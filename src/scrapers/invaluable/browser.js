@@ -7,7 +7,6 @@ puppeteer.use(StealthPlugin());
 class BrowserManager {
   constructor() {
     this.browser = null;
-    this.page = null;
   }
 
   async initialize() {
@@ -26,13 +25,14 @@ class BrowserManager {
         ]
       });
 
-      this.page = await this.browser.newPage();
+      // Create initial page
+      const page = await this.browser.newPage();
       
       // Set consistent viewport
-      await this.page.setViewport({ width, height });
+      await page.setViewport({ width, height });
       
       // Override navigator.webdriver
-      await this.page.evaluateOnNewDocument(() => {
+      await page.evaluateOnNewDocument(() => {
         Object.defineProperty(navigator, 'webdriver', {
           get: () => undefined
         });
@@ -64,11 +64,13 @@ class BrowserManager {
         });
       });
       
-      await this.page.setExtraHTTPHeaders(browserConfig.headers);
-      await this.page.setUserAgent(browserConfig.userAgent);
+      await page.setExtraHTTPHeaders(browserConfig.headers);
+      await page.setUserAgent(browserConfig.userAgent);
       
       // Add random mouse movements and scrolling
-      await this.addHumanBehavior(this.page);
+      await this.addHumanBehavior(page);
+      
+      return page;
     }
   }
 
@@ -76,7 +78,6 @@ class BrowserManager {
     if (this.browser) {
       await this.browser.close();
       this.browser = null;
-      this.page = null;
     }
   }
 
@@ -159,7 +160,7 @@ class BrowserManager {
   }
 
   getPage() {
-    return this.page;
+    return this.browser.pages().then(pages => pages[0]);
   }
 }
 

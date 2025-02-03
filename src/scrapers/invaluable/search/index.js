@@ -68,7 +68,8 @@ class SearchScraper {
   }
 
   async processArtist(artist, cookies) {
-    const page = this.browserManager.getPage();
+    // Create a new tab for each artist
+    const page = await this.browserManager.browser.newPage();
     
     // Reset request interception and listeners
     await page.setRequestInterception(false);
@@ -130,9 +131,13 @@ class SearchScraper {
       return {
         artist,
         ...searchResult
-      };
+      }).finally(async () => {
+        // Close the tab when done
+        await page.close();
+      });
     } catch (error) {
       console.error(`❌ Error processing artist ${artist}:`, error.message);
+      await page.close();
       throw error;
     }
   }
