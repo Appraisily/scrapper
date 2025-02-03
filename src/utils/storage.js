@@ -113,23 +113,24 @@ class CloudStorage {
   async saveJsonFile(filename, data) {
     try {
       if (!this.initialized) {
-        console.log('Initializing storage');
+        console.log('Initializing storage for JSON save');
         await this.initialize();
       }
 
       console.log(`Saving JSON file: ${filename}`);
       
-      // Create parent directories if they don't exist
       const file = this.storage.bucket(this.bucketName).file(filename);
       
-      // Check if file exists
-      const [exists] = await file.exists();
-      if (exists) {
-        console.log('File already exists, updating content');
+      // Ensure we have valid content to save
+      if (!data) {
+        throw new Error('No data provided to save');
       }
       
-      // Save the file
-      await file.save(JSON.stringify(data, null, 2));
+      // Convert to string if it's not already
+      const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+      
+      // Save the content
+      await file.save(content);
       console.log('File saved successfully');
 
       // Generate signed URL
@@ -140,7 +141,7 @@ class CloudStorage {
       });
       console.log('Generated signed URL');
 
-      return url;
+      return { url, success: true };
     } catch (error) {
       console.error('[Storage] Error saving JSON file:', error);
       throw error;
@@ -150,19 +151,27 @@ class CloudStorage {
   async saveFile(filename, content) {
     try {
       if (!this.initialized) {
-        console.log('Initializing storage');
+        console.log('Initializing storage for file save');
         await this.initialize();
+      }
+
+      // Ensure we have content to save
+      if (!content) {
+        throw new Error('No content provided to save');
       }
 
       console.log(`Saving file: ${filename}`);
       
       const file = this.storage.bucket(this.bucketName).file(filename);
       
-      // Save the file
+      // Convert content to string if needed
+      const stringContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+      
+      // Save the content
       await file.save(content);
       console.log('File saved successfully');
 
-      return true;
+      return { success: true };
     } catch (error) {
       console.error('[Storage] Error saving file:', error);
       throw error;

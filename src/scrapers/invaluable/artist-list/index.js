@@ -143,14 +143,16 @@ class ArtistListScraper {
   async processSubindexes(page, subindexes) {
     const allArtists = [];
     
-    // Only process the Aa subindex
-    const aaSubindex = subindexes.find(s => s.text === 'Aa');
-    if (aaSubindex) {
-      console.log(`\n🔍 Processing subindex: ${aaSubindex.text}`);
-      const artists = await this.processSubindex(page, aaSubindex);
+    for (const subindex of subindexes) {
+      console.log(`\n🔍 Processing subindex: ${subindex.text}`);
+      const artists = await this.processSubindex(page, subindex);
       allArtists.push(...artists);
-    } else {
-      console.log('❌ Aa subindex not found');
+      
+      // Add a delay between subindexes to avoid rate limiting
+      if (subindexes.indexOf(subindex) < subindexes.length - 1) {
+        console.log('⏳ Pausing before next subindex...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
     }
     
     return allArtists;
@@ -215,7 +217,7 @@ class ArtistListScraper {
         
         // Save HTML states for this subindex
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const subindexId = subindex.text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const subindexId = `a-${subindex.text.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
         
         if (htmlStates.initial) {
           const filename = `artists/subindexes/${subindexId}-${timestamp}-initial.html`;
@@ -242,7 +244,11 @@ class ArtistListScraper {
           console.log(`  • No artists found in subindex ${subindex.text} after ${maxRetries} attempts`);
           return [];
         }
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Increase delay between retries
+        const retryDelay = 5000 * (retryCount + 1);
+        console.log(`  • Waiting ${retryDelay/1000}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
       }
     }
     
