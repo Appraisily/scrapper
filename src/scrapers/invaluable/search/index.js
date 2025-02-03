@@ -70,12 +70,14 @@ class SearchScraper {
   async processArtist(artist, cookies) {
     const page = this.browserManager.getPage();
     
+    // Set cookies first, before any request interception
+    await page.setCookie(...cookies);
+
     try {
+      // Reset request interception and listeners
       await page.setRequestInterception(false);
       await page.removeAllListeners('request');
       await page.removeAllListeners('response');
-      
-      await page.setCookie(...cookies);
       
       // Properly construct the search URL
       const searchParams = new URLSearchParams({
@@ -103,7 +105,24 @@ class SearchScraper {
     console.log('👀 Step 3: Enabling API request interception');
     await page.setRequestInterception(true);
     const apiMonitor = new ApiMonitor();
-    apiMonitor.setupRequestInterception(page);
+    
+    // Add request interception with cookie preservation
+    page.on('request', async (request) => {
+      const url = request.url();
+      if (url.includes('catResults')) {
+        console.log('  • Intercepted API request:', url);
+        const headers = {
+          ...request.headers(),
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        };
+        request.continue({ headers });
+      } else {
+        request.continue();
+      }
+    });
+    
+    apiMonitor.setupResponseMonitoring(page);
     let searchResultsFound = false;
 
     console.log('🌐 Step 4: Navigating to search URL');

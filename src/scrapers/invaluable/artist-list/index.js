@@ -156,6 +156,10 @@ class ArtistListScraper {
   async processSubindex(page, subindex) {
     const subindexUrl = `https://www.invaluable.com${subindex.href}`;
     console.log(`\n  • Processing URL: ${subindexUrl}`);
+
+    // Get current cookies before processing
+    const currentCookies = await page.cookies();
+    console.log(`  • Current cookies: ${currentCookies.length}`);
     
     let retryCount = 0;
     const maxRetries = 3;
@@ -173,6 +177,12 @@ class ArtistListScraper {
         await page.setRequestInterception(false);
         await page.removeAllListeners('request');
         await page.removeAllListeners('response');
+
+        // Restore cookies before navigation
+        if (currentCookies.length > 0) {
+          console.log(`  • Restoring ${currentCookies.length} cookies`);
+          await page.setCookie(...currentCookies);
+        }
         
         console.log(`  • Navigating to URL`);
         await page.goto(subindexUrl, {
@@ -180,7 +190,8 @@ class ArtistListScraper {
           timeout: constants.navigationTimeout
         });
         
-        await page.waitForTimeout(2000); // Small delay after navigation
+        // Use evaluate for delay instead of waitForTimeout
+        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 2000)));
         
         console.log(`  • Capturing initial HTML for attempt ${retryCount + 1}`);
         htmlStates.initial = await page.content();
@@ -192,7 +203,11 @@ class ArtistListScraper {
           console.log('  • Protection detected, handling...');
           htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
-          await page.waitForTimeout(2000); // Small delay after protection
+          await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 2000)));
+
+          // Update cookies after protection handling
+          currentCookies = await page.cookies();
+          console.log(`  • Updated cookies after protection: ${currentCookies.length}`);
         }
         
         console.log(`  • Waiting for content to load`);

@@ -7,23 +7,8 @@ class ApiMonitor {
     this.firstResponseSize = 0;
   }
 
-  setupRequestInterception(page) {
-    console.log('Setting up request interception');
-    
-    page.on('request', async (request) => {
-      const url = request.url();
-      if (url.includes('catResults')) {
-        console.log('  • Intercepted API request:', url);
-        const headers = {
-          ...request.headers(),
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        };
-        request.continue({ headers });
-      } else {
-        request.continue();
-      }
-    });
+  setupResponseMonitoring(page) {
+    console.log('Setting up response monitoring');
     
     page.on('response', async (response) => {
       try {
