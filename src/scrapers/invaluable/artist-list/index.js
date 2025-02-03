@@ -7,15 +7,39 @@ class ArtistListScraper {
     
     this.browserManager = browserManager;
     this.storage = storage;
+    this.progressFile = 'artists/progress.json';
   }
 
   async close() {
     await this.browserManager.close();
   }
 
+  async loadProgress() {
+    try {
+      const { content } = await this.storage.getFile(this.progressFile);
+      return JSON.parse(content);
+    } catch (error) {
+      // If file doesn't exist or other error, start fresh
+      return {
+        lastProcessedIndex: -1,
+        totalSubindexes: 0,
+        completedSubindexes: [],
+        lastUpdate: null
+      };
+    }
+  }
+
+  async saveProgress(progress) {
+    await this.storage.saveFile(this.progressFile, JSON.stringify(progress, null, 2));
+  }
+
   async extractArtistList() {
     const page = this.browserManager.getPage();
     console.log('🔄 Starting A section artist list extraction');
+    
+    // Load progress
+    console.log('📊 Loading progress data');
+    const progress = await this.loadProgress();
     
     // Reset page state
     await page.setRequestInterception(false);
@@ -85,17 +109,45 @@ class ArtistListScraper {
       console.log('📑 Step 5: Extracting subindexes');
       const subindexes = await this.extractSubindexes(page);
       console.log(`Found ${subindexes.length} subindexes`);
+
+      // Update progress with total subindexes if needed
+      if (progress.totalSubindexes === 0) {
+        progress.totalSubindexes = subindexes.length;
+      }
+
+      // Determine next subindex to process
+      const nextIndex = progress.lastProcessedIndex + 1;
+      if (nextIndex >= subindexes.length) {
+        return {
+          success: true,
+          message: 'All subindexes have been processed',
+          progress: {
+            completed: progress.completedSubindexes.length,
+            total: subindexes.length,
+            percentage: 100
+          }
+        };
+      }
+
+      const subindexToProcess = subindexes[nextIndex];
+      console.log(`🎯 Processing subindex ${nextIndex + 1}/${subindexes.length}: ${subindexToProcess.text}`);
       
-      console.log('🎨 Step 6: Processing artist data');
-      const allArtists = await this.processSubindexes(page, subindexes);
+      // Process single subindex
+      const artists = await this.processSubindex(page, subindexToProcess);
       
       // Capture final HTML state
       console.log('📄 Step 7: Capturing final HTML state');
       finalHtml = await page.content();
       
+      // Update progress
+      progress.lastProcessedIndex = nextIndex;
+      progress.completedSubindexes.push(subindexToProcess.text);
+      progress.lastUpdate = new Date().toISOString();
+      await this.saveProgress(progress);
+      
       const result = {
         success: true,
-        artists: allArtists,
+        artists,
         artistListFound,
         html: {
           initial: initialHtml,
@@ -106,11 +158,16 @@ class ArtistListScraper {
         source: 'invaluable',
         section: 'A',
         url: baseUrl,
-        subindexes: subindexes.map(s => s.text),
-        totalFound: allArtists.length
+        currentSubindex: subindexToProcess.text,
+        progress: {
+          completed: progress.completedSubindexes.length,
+          total: subindexes.length,
+          percentage: Math.round((progress.completedSubindexes.length / subindexes.length) * 100)
+        },
+        totalFound: artists.length
       };
       
-      console.log(`✅ Step 8: Process complete - Found ${allArtists.length} artists`);
+      console.log(`✅ Step 8: Subindex complete - Found ${artists.length} artists`);
       return result;
       
     } catch (error) {
@@ -138,28 +195,6 @@ class ArtistListScraper {
         })
         .filter(item => item !== null);
     });
-  }
-
-  async processSubindexes(page, subindexes) {
-    const allArtists = [];
-    
-    // Only process first few subindexes to avoid rate limiting
-    const maxSubindexes = 3;
-    const limitedSubindexes = subindexes.slice(0, maxSubindexes);
-    
-    for (const subindex of limitedSubindexes) {
-      console.log(`\n🔍 Processing subindex: ${subindex.text}`);
-      const artists = await this.processSubindex(page, subindex);
-      allArtists.push(...artists);
-      
-      // Add longer delay between subindexes
-      if (limitedSubindexes.indexOf(subindex) < limitedSubindexes.length - 1) {
-        console.log('⏳ Pausing before next subindex...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
-      }
-    }
-    
-    return allArtists;
   }
 
   async processSubindex(page, subindex) {

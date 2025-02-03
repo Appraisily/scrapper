@@ -148,6 +148,33 @@ class CloudStorage {
     }
   }
 
+  async getFile(filename) {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+
+      const file = this.storage.bucket(this.bucketName).file(filename);
+      const [exists] = await file.exists();
+
+      if (!exists) {
+        throw new Error('File not found');
+      }
+
+      const [content] = await file.download();
+      return {
+        content: content.toString('utf-8'),
+        success: true
+      };
+    } catch (error) {
+      if (error.message === 'File not found') {
+        throw error;
+      }
+      console.error('[Storage] Error reading file:', error);
+      throw error;
+    }
+  }
+
   async saveFile(filename, content) {
     try {
       if (!this.initialized) {
