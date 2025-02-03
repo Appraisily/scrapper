@@ -175,7 +175,6 @@ class SearchManager {
       let initialHtml = null;
       let protectionHtml = null;
       let finalHtml = null;
-      let apiData = null;
 
       const apiMonitor = new ApiMonitor();
       console.log('👀 Step 3: Enabling API request interception');
@@ -229,9 +228,9 @@ class SearchManager {
         console.log('❌ Error during process:', error.message);
       }
 
-      const apiData = apiMonitor.getData();
+      const monitorData = apiMonitor.getData();
       console.log('📊 Step 9: Final status:');
-      console.log(`  • API responses captured: ${apiData.responses.length}`);
+      console.log(`  • API responses captured: ${monitorData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
 
       try {
@@ -248,7 +247,7 @@ class SearchManager {
           protection: protectionHtml,
           final: finalHtml
         },
-        apiData,
+        apiData: monitorData,
         timestamp: new Date().toISOString(),
         url
       };
