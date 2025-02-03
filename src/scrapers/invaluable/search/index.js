@@ -192,6 +192,9 @@ class SearchScraper {
   async processArtistSearch(page, searchUrl) {
     console.log('👀 Enabling API request interception');
     await page.setRequestInterception(true);
+    const artist = page.url().includes('query=') ? 
+      decodeURIComponent(page.url().split('query=')[1].split('&')[0]) : 
+      'Unknown Artist';
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const apiMonitor = new ApiMonitor(this.storage, artist, timestamp);
     apiMonitor.setupRequestInterception(page);
@@ -254,6 +257,8 @@ class SearchScraper {
      } catch (error) {
        console.error('Error during artist search:', error.message);
        throw error;
+     }
+   }
 }
 
 module.exports = SearchScraper;
