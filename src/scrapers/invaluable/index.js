@@ -3,16 +3,17 @@ const AuthManager = require('./auth');
 const SearchManager = require('./search');
 
 class InvaluableScraper {
-  constructor() {
+  constructor(storage) {
     this.browser = new BrowserManager();
     this.auth = null;
     this.search = null;
+    this.storage = storage;
   }
 
   async initialize() {
     await this.browser.initialize();
     this.auth = new AuthManager(this.browser);
-    this.search = new SearchManager(this.browser);
+    this.search = new SearchManager(this.browser, this.storage);
   }
 
   async close() {

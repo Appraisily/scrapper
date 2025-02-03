@@ -3,11 +3,11 @@ const ArtistListExtractor = require('./artist-list-extractor');
 const ResultSaver = require('./result-saver');
 
 class SearchManager {
-  constructor(browserManager) {
+  constructor(browserManager, storage) {
     this.browserManager = browserManager;
     this.artistProcessor = new ArtistProcessor(browserManager);
     this.artistListExtractor = new ArtistListExtractor(browserManager, storage);
-    this.resultSaver = new ResultSaver();
+    this.resultSaver = new ResultSaver(storage);
     this.artists = [
       'Cornelis Johannes van der Aa',
       'Dirk van der Aa',

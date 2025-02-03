@@ -59,7 +59,7 @@ async function initializeScraper() {
   console.log('Starting Invaluable scraper initialization...');
 
   try {
-    invaluableScraper = new InvaluableScraper();
+    invaluableScraper = new InvaluableScraper(storage);
     await invaluableScraper.initialize();
     app.locals.invaluableScraper = invaluableScraper;
     console.log('Invaluable scraper initialized successfully');
