@@ -15,7 +15,7 @@ class ArtistListScraper {
 
   async extractArtistList() {
     const page = await this.browserManager.browser.newPage();
-    let apiResponse = null;
+    const apiResponses = [];
 
     try {
       console.log('🔄 Starting A section artist list extraction');
@@ -36,14 +36,14 @@ class ArtistListScraper {
       // Intercept responses
       page.on('response', async response => {
         const url = response.url();
-        if (url.includes('algolia.invaluable.com')) {
+        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
           console.log('📥 Intercepted Algolia response');
           console.log('  • Status:', response.status());
           
           try {
-            const responseData = await response.json();
-            console.log('  • Response size:', JSON.stringify(responseData).length, 'bytes');
-            apiResponse = responseData;
+            const responseText = await response.text();
+            console.log('  • Response size:', responseText.length, 'bytes');
+            apiResponses.push(responseText);
           } catch (error) {
             console.error('  • Error parsing response:', error.message);
           }
@@ -72,32 +72,27 @@ class ArtistListScraper {
         { timeout: constants.defaultTimeout }
       );
 
-      if (!apiResponse) {
+      if (apiResponses.length === 0) {
         throw new Error('No API response captured');
       }
 
-      console.log('✅ API response captured successfully');
+      console.log(`✅ Captured ${apiResponses.length} API responses`);
 
-      // Save API response
+      // Save raw API responses
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `artists/api/algolia-${timestamp}.json`;
-      await this.storage.saveJsonFile(filename, apiResponse);
-
-      // Process artists from response
-      const artists = apiResponse.results[0].hits.map(hit => ({
-        name: `${hit.firstName} ${hit.lastName}`.trim(),
-        count: hit.totalCount,
-        url: `https://www.invaluable.com/artist/${hit.artistRef}`,
-        subindex: hit['alpha.lvl1'].split(' > ')[1]
-      }));
+      for (let i = 0; i < apiResponses.length; i++) {
+        const filename = `artists/api/algolia-${timestamp}-${i + 1}.json`;
+        await this.storage.saveFile(filename, apiResponses[i]);
+        console.log(`  • Saved response ${i + 1} to ${filename}`);
+      }
 
       return {
         success: true,
-        artists,
+        responses: apiResponses.length,
         timestamp: new Date().toISOString(),
         source: 'invaluable',
         section: 'A',
-        totalFound: artists.length
+        files: apiResponses.map((_, i) => `artists/api/algolia-${timestamp}-${i + 1}.json`)
       };
 
     } catch (error) {
