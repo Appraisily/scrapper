@@ -1,5 +1,8 @@
 class ResultSaver {
   constructor(storage) {
+    if (!storage) {
+      throw new Error('Storage instance is required');
+    }
     this.storage = storage;
   }
 

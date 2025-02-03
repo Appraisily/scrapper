@@ -3,8 +3,10 @@ const { constants } = require('../utils');
 class ArtistListExtractor {
   constructor(browserManager, storage) {
     this.browserManager = browserManager;
+    if (!storage) {
+      throw new Error('Storage instance is required');
+    }
     this.storage = storage;
-    this.bucketName = process.env.STORAGE_BUCKET || 'invaluable-html-archive';
   }
 
   async extractArtistList() {
@@ -68,9 +70,8 @@ class ArtistListExtractor {
         try {
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
           const screenshotPath = `artists/debug/timeout-${timestamp}.png`;
-          await page.screenshot({ path: '/tmp/debug.png', fullPage: true });
-          const file = this.storage.bucket(this.bucketName).file(screenshotPath);
-          await file.save(require('fs').readFileSync('/tmp/debug.png'));
+          const screenshot = await page.screenshot({ fullPage: true });
+          await this.storage.saveFile(screenshotPath, screenshot);
           console.log(`  • Debug screenshot saved: ${screenshotPath}`);
         } catch (screenshotError) {
           console.error('Failed to save debug screenshot:', screenshotError.message);
@@ -158,8 +159,7 @@ class ArtistListExtractor {
   }
 
   async processSubindex(page, subindex) {
-    // Add domain to clean href
-    const subindexUrl = new URL(subindex.href, 'https://www.invaluable.com').href;
+    const subindexUrl = `https://www.invaluable.com${subindex.href}`;
     console.log(`\n  • Processing URL: ${subindexUrl}`);
     
     let retryCount = 0;
@@ -172,39 +172,61 @@ class ArtistListExtractor {
     
     while (retryCount < maxRetries) {
       try {
+        console.log(`  • Starting attempt ${retryCount + 1}`);
+        
+        // Reset navigation state
+        await page.setRequestInterception(false);
+        await page.removeAllListeners('request');
+        await page.removeAllListeners('response');
+        
+        console.log(`  • Navigating to URL`);
         await page.goto(subindexUrl, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
         
+        await page.waitForTimeout(2000); // Small delay after navigation
+        
         console.log(`  • Capturing initial HTML for attempt ${retryCount + 1}`);
         htmlStates.initial = await page.content();
         
+        console.log(`  • Checking for protection`);
         const currentHtml = await page.content();
         if (currentHtml.includes('checking your browser') || 
             currentHtml.includes('Access to this page has been denied')) {
           console.log('  • Protection detected, handling...');
-          await page.waitForTimeout(2000); // Small delay before handling protection
           htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
           await page.waitForTimeout(2000); // Small delay after protection
         }
         
+        console.log(`  • Waiting for content to load`);
         try {
           await page.waitForFunction(() => {
             const list = document.querySelector('.ais-Hits-list');
             const noResults = document.querySelector('.no-results-message');
             const loading = document.querySelector('.loading-indicator');
-            return (list !== null || noResults !== null) && !loading;
+            const ready = (list !== null || noResults !== null) && !loading;
+            console.log('Content check:', { 
+              hasList: list !== null, 
+              hasNoResults: noResults !== null, 
+              isLoading: loading !== null,
+              ready 
+            });
+            return ready;
           }, { timeout: constants.defaultTimeout });
+          console.log('  • Content loaded successfully');
         } catch (waitError) {
           console.log('  • Timeout waiting for results, capturing current state');
+          console.log('  • Error:', waitError.message);
         }
         
         console.log(`  • Capturing final HTML for attempt ${retryCount + 1}`);
         htmlStates.final = await page.content();
         
+        console.log(`  • Extracting artists from page`);
         const artists = await this.extractArtistsFromPage(page);
+        console.log(`  • Found ${artists.length} artists`);
         
         // Save HTML states for this subindex
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -230,6 +252,7 @@ class ArtistListExtractor {
       } catch (error) {
         retryCount++;
         console.log(`  • Attempt ${retryCount} failed:`, error.message);
+        console.log(`  • Stack trace:`, error.stack);
         
         // Save error state HTML if available
         if (htmlStates.initial) {
@@ -253,9 +276,7 @@ class ArtistListExtractor {
   async saveHtml(filename, content) {
     try {
       console.log(`  • Saving HTML: ${filename}`);
-      await this.browserManager.getPage().evaluate(ms => new Promise(r => setTimeout(r, ms)), 1000);
-      const file = this.storage.bucket(this.bucketName).file(filename);
-      await file.save(content);
+      await this.storage.saveFile(filename, content);
       console.log(`  • HTML saved successfully: ${filename}`);
     } catch (error) {
       console.error(`  • Error saving HTML ${filename}:`, error.message);

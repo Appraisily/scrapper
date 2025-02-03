@@ -4,33 +4,46 @@ A specialized Node.js web scraper for extracting fine art auction data from Inva
 
 ## Overview
 
-This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings, with specific focus on:
-- Initial page load data
+This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings and artist directories, with specific focus on:
+- Artist directory crawling
+- Search results capture
 - Protection/challenge page handling
-- "Load More" pagination responses
-- Raw HTML states at various stages
-- Structured API responses
+- API response monitoring
+- Raw HTML state preservation
 
 ## Features
 
 ### Core Functionality
-- **HTML Capture**
+- **Artist Directory Extraction**
+  - Alphabetical artist browsing
+  - Subindex processing
+  - Artist count tracking
+  - Comprehensive data collection
+
+- **Search Results Capture**
+  - Multiple artist processing
+  - Price range filtering
+  - Auction date sorting
+  - Pagination handling
+
+- **HTML State Tracking**
   - Initial page state
   - Protection/challenge pages
-  - Final page state after interactions
-  - Automatic state tracking
+  - Final page state
+  - State transition logging
 
 - **API Response Capture**
-  - First page results
-  - Pagination/load more responses
+  - Search result responses
   - Raw JSON preservation
   - Response deduplication
+  - Size validation
 
-- **Protection Handling**
-  - Cloudflare challenge bypass
-  - Bot detection avoidance
-  - Cookie management
-  - Session persistence
+### Protection Handling
+- Cloudflare challenge bypass
+- Bot detection avoidance
+- Cookie management
+- Session persistence
+- Automatic retry logic
 
 ### Technical Features
 
@@ -46,22 +59,26 @@ This scraper is designed to capture both HTML content and API responses from Inv
 - Google Cloud Storage organization:
   ```
   Fine Art/
-  ├── html/
-  │   ├── {searchId}-initial.html
-  │   ├── {searchId}-protection.html
-  │   └── {searchId}-final.html
-  ├── api/
-  │   ├── {searchId}-response1.json
-  │   └── {searchId}-response2.json
-  └── metadata/
-      └── {searchId}.json
+  ├── artists/
+  │   ├── {artistId}-{timestamp}-initial.html
+  │   ├── {artistId}-{timestamp}-protection.html
+  │   ├── {artistId}-{timestamp}-final.html
+  │   ├── {artistId}-{timestamp}-response1.json
+  │   └── {artistId}-{timestamp}-metadata.json
+  ├── subindexes/
+  │   ├── {subindexId}-{timestamp}-initial.html
+  │   ├── {subindexId}-{timestamp}-protection.html
+  │   └── {subindexId}-{timestamp}-final.html
+  └── debug/
+      └── timeout-{timestamp}.png
   ```
 
 #### API Features
-- RESTful endpoint
+- RESTful endpoints
 - Query parameter support
 - Comprehensive response format
-- Error handling
+- Error handling and recovery
+- Debug logging
 
 ## Prerequisites
 
@@ -98,77 +115,105 @@ npm start
 
 ## API Documentation
 
+### Artist List Endpoint
+
+```
+GET /api/invaluable/artists
+```
+
+Returns a list of artists from Invaluable's directory, starting with 'A'.
+
+Example Response:
+```json
+{
+  "success": true,
+  "artists": [
+    {
+      "name": "Artist Name",
+      "count": 42,
+      "url": "https://www.invaluable.com/artist/...",
+      "subindex": "Aa"
+    }
+  ],
+  "artistListFound": true,
+  "html": {
+    "initial": "...",
+    "protection": "...",
+    "final": "..."
+  },
+  "timestamp": "2024-02-03T09:15:51.894Z",
+  "source": "invaluable",
+  "section": "A",
+  "subindexes": ["Aa", "Ab", "Ac", ...],
+  "totalFound": 150
+}
+```
+
 ### Search Endpoint
 
 ```
 GET /api/invaluable
 ```
 
-Query Parameters:
-- `query` (optional): Main search query (default: "fine art")
-- `keyword` (optional): Additional keyword filter (default: "fine art")
+Searches for artworks by specified artists with configurable parameters.
 
 Example Response:
 ```json
 {
   "success": true,
-  "message": "Search results saved successfully",
-  "searchId": "invaluable-fine-art-2024-02-02T17-38-07-714Z",
-  "files": {
-    "html": {
-      "initial": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-initial.html",
-      "protection": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-protection.html",
-      "final": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-final.html"
-    },
-    "api": [
-      "Fine Art/api/invaluable-fine-art-2024-02-02T17-38-07-714Z-response1.json",
-      "Fine Art/api/invaluable-fine-art-2024-02-02T17-38-07-714Z-response2.json"
-    ]
-  },
-  "metadata": {
-    "source": "invaluable",
-    "query": "fine art",
-    "keyword": "fine art",
-    "timestamp": "2024-02-02T17:38:07.714Z",
-    "searchUrl": "https://www.invaluable.com/search?...",
-    "searchParams": {
-      "upcoming": false,
-      "query": "fine art",
-      "keyword": "fine art",
-      "priceResult": { "min": 250 },
-      "dateTimeUTCUnix": { "min": 1577833200 },
-      "dateType": "Custom",
-      "sort": "auctionDateAsc"
-    },
-    "status": "pending_processing"
-  }
+  "results": [
+    {
+      "artist": "Artist Name",
+      "html": {
+        "initial": "...",
+        "protection": "...",
+        "final": "...",
+        "searchResultsFound": true
+      },
+      "apiData": {
+        "responses": [...]
+      },
+      "timestamp": "2024-02-03T09:15:51.894Z"
+    }
+  ],
+  "timestamp": "2024-02-03T09:15:51.894Z"
 }
 ```
 
 ## Process Flow
 
-The scraper follows these steps (with detailed logging):
+The scraper follows these steps:
 
-1. 🔄 Start search process
-2. 🍪 Set authentication cookies
-3. 👀 Enable API request interception
-4. 🌐 Navigate to search URL
-5. 📄 Capture initial HTML
-6. 🛡️ Handle protection if needed
-   - 🤖 Process challenge
-   - ✅ Clear protection
-7. ⏳ Wait for first API response
-8. 📥 Capture first API response
-9. ⌛ Pause before load more
-10. 🔍 Handle load more
-    - 🖱️ Click button
-    - ⏳ Wait for response
-    - 📥 Capture second response
-11. 📄 Capture final state
-12. 📊 Generate status report
-13. 💾 Initialize storage
-14. 📁 Save all files
-15. ✅ Complete process
+1. 🔄 Initialize browser and storage
+2. 🌐 Process each request:
+   - Artist List:
+     1. Navigate to artist directory
+     2. Handle protection if needed
+     3. Extract subindexes
+     4. Process each subindex
+     5. Save HTML states and results
+   - Search:
+     1. Process each artist
+     2. Monitor API responses
+     3. Handle protection
+     4. Save results and metadata
+
+## Error Handling
+
+The system includes robust error handling for:
+- Network timeouts (45s default)
+- Protection challenges
+- API failures
+- Storage errors
+- Invalid responses
+- Rate limiting
+
+Key features:
+- Automatic retries (3 attempts)
+- Debug screenshots
+- State preservation
+- Detailed error logging
+- Graceful degradation
 
 ## Deployment
 
@@ -199,39 +244,27 @@ gcloud builds submit --config cloudbuild.yaml
 ```
 ├── src/
 │   ├── server.js                 # Express server setup
+│   ├── routes/
+│   │   ├── artists.js           # Artist list endpoint
+│   │   └── search.js            # Search endpoint
 │   ├── scrapers/
 │   │   └── invaluable/
 │   │       ├── index.js         # Main scraper class
 │   │       ├── browser.js       # Browser management
 │   │       ├── auth.js          # Authentication handling
+│   │       ├── utils.js         # Shared utilities
 │   │       └── search/
-│   │           ├── index.js     # Search functionality
+│   │           ├── index.js     # Search manager
+│   │           ├── artist-processor.js    # Artist search
+│   │           ├── artist-list-extractor.js # Directory crawling
 │   │           ├── api-monitor.js # API response capture
-│   │           └── pagination-handler.js # Load more handling
+│   │           └── result-saver.js # Storage handling
 │   └── utils/
 │       └── storage.js           # GCS integration
 ├── Dockerfile                    # Container configuration
 ├── cloudbuild.yaml              # Cloud Build config
 └── package.json                 # Dependencies
 ```
-
-## Error Handling
-
-The system handles various error scenarios:
-- Network timeouts
-- Protection challenges
-- API failures
-- Storage errors
-- Invalid responses
-- Rate limiting
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
 
 ## License
 
