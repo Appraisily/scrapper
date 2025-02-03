@@ -16,34 +16,56 @@ class ArtistListScraper {
   async extractArtistList() {
     const page = await this.browserManager.browser.newPage();
     const apiResponses = [];
+    let debugInfo = {
+      requests: [],
+      responses: []
+    };
 
     try {
       console.log('🔄 Starting A section artist list extraction');
       console.log('📑 Setting up request interception');
 
       await page.setRequestInterception(true);
-
-      // Intercept requests
+      
+      // Monitor all requests to find the new API endpoint
       page.on('request', request => {
         const url = request.url();
-        if (url.includes('algolia.invaluable.com')) {
-          console.log('🔍 Intercepted Algolia request:', url);
-          console.log('  • Headers:', request.headers());
-        }
+        console.log('🔍 Request:', {
+          url: url,
+          method: request.method(),
+          resourceType: request.resourceType()
+        });
+        
+        debugInfo.requests.push({
+          url,
+          method: request.method(),
+          headers: request.headers(),
+          resourceType: request.resourceType()
+        });
+
         request.continue();
       });
 
-      // Intercept responses
       page.on('response', async response => {
         const url = response.url();
-        if (url.includes('algolia.invaluable.com')) {
-          console.log('📥 Intercepted Algolia response');
-          console.log('  • Status:', response.status());
+        console.log('📥 Response:', {
+          url: url,
+          status: response.status(),
+          type: response.headers()['content-type']
+        });
+        
+        debugInfo.responses.push({
+          url,
+          status: response.status(),
+          headers: response.headers()
+        });
+        // Try to capture any JSON responses that might contain artist data
+        if (response.headers()['content-type']?.includes('application/json')) {
           
           try {
             const responseText = await response.text();
             if (responseText) {
-              console.log('  • Response size:', responseText.length, 'bytes');
+              console.log('  • JSON Response size:', responseText.length, 'bytes');
               apiResponses.push({
                 url,
                 status: response.status(),
@@ -80,6 +102,8 @@ class ArtistListScraper {
       await new Promise(resolve => setTimeout(resolve, 5000));
 
       if (apiResponses.length === 0) {
+        console.log('⚠️ No API responses captured. Debug info:', JSON.stringify(debugInfo, null, 2));
+        
         // Try scrolling to trigger more requests
         await page.evaluate(() => {
           window.scrollBy(0, 500);
@@ -89,6 +113,10 @@ class ArtistListScraper {
         await new Promise(resolve => setTimeout(resolve, 5000));
         
         if (apiResponses.length === 0) {
+          // Take a screenshot for debugging
+          await page.screenshot({path: 'debug-screenshot.png'});
+          console.log('📸 Saved debug screenshot');
+          
           throw new Error('No API response captured');
         }
       }
