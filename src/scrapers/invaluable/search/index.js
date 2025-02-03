@@ -177,7 +177,6 @@ class SearchManager {
       let finalHtml = null;
       let apiData = null;
 
-      // Set up API monitoring before navigation
       const apiMonitor = new ApiMonitor();
       console.log('👀 Step 3: Enabling API request interception');
       await page.setRequestInterception(true);
@@ -193,14 +192,12 @@ class SearchManager {
         });
         console.log('  • Navigation complete');
 
-        // Wait for any remaining network activity
         await page.waitForTimeout(2000);
 
         console.log('📄 Step 5: Capturing initial HTML');
         initialHtml = await page.content();
         console.log(`  • Size: ${(initialHtml.length / 1024).toFixed(2)} KB`);
 
-        // Check for protection page
         if (initialHtml.includes('checking your browser') || 
             initialHtml.includes('Access to this page has been denied')) {
           console.log('🛡️ Step 6a: Protection page detected');
@@ -209,14 +206,12 @@ class SearchManager {
           await this.browserManager.handleProtection();
           await page.waitForTimeout(2000);
           console.log('✅ Step 6c: Protection cleared');
-          // Re-navigate after protection
           await page.goto(url, { waitUntil: 'networkidle0', timeout: constants.navigationTimeout });
           initialHtml = await page.content();
         } else {
           console.log('✅ Step 6: No protection detected');
         }
 
-        // Check if we got the API response during navigation
         if (apiMonitor.hasFirstResponse()) {
           console.log('📥 Step 7: API response captured during navigation');
           console.log(`  • Response size: ${(apiMonitor.getFirstResponseSize() / 1024).toFixed(2)} KB`);
@@ -224,10 +219,8 @@ class SearchManager {
           console.log('⚠️ Step 7: No API response captured during navigation');
         }
 
-        // Wait for any dynamic content to load
         await page.waitForTimeout(2000);
 
-        // Capture final HTML
         console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
         console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
@@ -236,14 +229,11 @@ class SearchManager {
         console.log('❌ Error during process:', error.message);
       }
 
-      }
-
       const apiData = apiMonitor.getData();
       console.log('📊 Step 9: Final status:');
       console.log(`  • API responses captured: ${apiData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
 
-      // Clean up request interception
       try {
         await page.removeAllListeners('request');
         await page.removeAllListeners('response');
