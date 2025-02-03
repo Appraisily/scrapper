@@ -36,40 +36,14 @@ class CloudStorage {
 
       metadata.files = {};
       
-      // Save results for each artist
       metadata.files.artists = [];
       
       for (const result of html.results) {
         const artistId = result.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const artistFiles = {
           artist: result.artist,
-          html: {},
           api: []
         };
-        
-        if (result.html.initial) {
-          console.log(`  • Saving initial HTML for ${result.artist}`);
-          const filename = `${baseFolder}/html/${searchId}-${artistId}-initial.html`;
-          const file = this.storage.bucket(this.bucketName).file(filename);
-          await file.save(result.html.initial);
-          artistFiles.html.initial = filename;
-        }
-        
-        if (result.html.protection) {
-          console.log(`  • Saving protection HTML for ${result.artist}`);
-          const filename = `${baseFolder}/html/${searchId}-${artistId}-protection.html`;
-          const file = this.storage.bucket(this.bucketName).file(filename);
-          await file.save(result.html.protection);
-          artistFiles.html.protection = filename;
-        }
-        
-        if (result.html.final) {
-          console.log(`  • Saving final HTML for ${result.artist}`);
-          const filename = `${baseFolder}/html/${searchId}-${artistId}-final.html`;
-          const file = this.storage.bucket(this.bucketName).file(filename);
-          await file.save(result.html.final);
-          artistFiles.html.final = filename;
-        }
         
         // Save API responses
         if (result.apiData?.responses?.length > 0) {
@@ -96,11 +70,6 @@ class CloudStorage {
       
       return {
         searchId,
-        htmlPaths: {
-          initial: metadata.files.initialHtml,
-          protection: metadata.files.protectionHtml,
-          final: metadata.files.finalHtml
-        },
         apiPath: metadata.files.api,
         metadataPath: metadataFilename
       };

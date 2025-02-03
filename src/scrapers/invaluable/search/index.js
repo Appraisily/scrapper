@@ -207,11 +207,11 @@ class SearchScraper {
         timestamp: new Date().toISOString()
       };
 
-    } catch (error) {
-      console.error('Error during artist search:', error.message);
-      throw error;
-    }
-  }
+     } catch (error) {
+       console.error('Error during artist search:', error.message);
+       throw error;
+     }
+   }
 
   async saveArtistResults(result, metadata) {
     try {

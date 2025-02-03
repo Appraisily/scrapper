@@ -36,14 +36,22 @@ class ArtistListScraper {
       // Intercept responses
       page.on('response', async response => {
         const url = response.url();
-        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
+        if (url.includes('algolia.invaluable.com')) {
           console.log('📥 Intercepted Algolia response');
           console.log('  • Status:', response.status());
           
           try {
             const responseText = await response.text();
-            console.log('  • Response size:', responseText.length, 'bytes');
-            apiResponses.push(responseText);
+            if (responseText) {
+              console.log('  • Response size:', responseText.length, 'bytes');
+              apiResponses.push({
+                url,
+                status: response.status(),
+                headers: response.headers(),
+                body: responseText,
+                timestamp: new Date().toISOString()
+              });
+            }
           } catch (error) {
             console.error('  • Error parsing response:', error.message);
           }
@@ -81,8 +89,9 @@ class ArtistListScraper {
       // Save raw API responses
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       for (let i = 0; i < apiResponses.length; i++) {
+        const response = apiResponses[i];
         const filename = `artists/api/algolia-${timestamp}-${i + 1}.json`;
-        await this.storage.saveFile(filename, apiResponses[i]);
+        await this.storage.saveFile(filename, JSON.stringify(response, null, 2));
         console.log(`  • Saved response ${i + 1} to ${filename}`);
       }
 
