@@ -75,13 +75,22 @@ class ArtistListScraper {
 
       // Wait for API response
       console.log('⏳ Waiting for API response...');
-      await page.waitForResponse(
-        response => response.url().includes('algolia.invaluable.com'),
-        { timeout: constants.defaultTimeout }
-      );
+      
+      // Wait for initial responses
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
       if (apiResponses.length === 0) {
-        throw new Error('No API response captured');
+        // Try scrolling to trigger more requests
+        await page.evaluate(() => {
+          window.scrollBy(0, 500);
+        });
+        
+        // Wait a bit more
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        if (apiResponses.length === 0) {
+          throw new Error('No API response captured');
+        }
       }
 
       console.log(`✅ Captured ${apiResponses.length} API responses`);
@@ -98,13 +107,29 @@ class ArtistListScraper {
       return {
         success: true,
         responses: apiResponses.length,
+        responseUrls: apiResponses.map(r => r.url),
         timestamp: new Date().toISOString(),
         source: 'invaluable',
         section: 'A',
         files: apiResponses.map((_, i) => `artists/api/algolia-${timestamp}-${i + 1}.json`)
       };
-
     } catch (error) {
+      // Even if we hit an error, try to save any responses we did capture
+      if (apiResponses.length > 0) {
+        console.log('Saving captured responses despite error...');
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        for (let i = 0; i < apiResponses.length; i++) {
+          try {
+            const response = apiResponses[i];
+            const filename = `artists/api/algolia-${timestamp}-${i + 1}.json`;
+            await this.storage.saveFile(filename, JSON.stringify(response, null, 2));
+            console.log(`  • Saved response ${i + 1} to ${filename}`);
+          } catch (saveError) {
+            console.error(`Error saving response ${i + 1}:`, saveError.message);
+          }
+        }
+      }
+
       console.error('Error getting artist list:', error);
       throw error;
     } finally {
