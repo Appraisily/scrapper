@@ -35,16 +35,37 @@ class SearchManager {
       // Handle protection if needed
       if (initialHtml.includes('checking your browser') || 
           initialHtml.includes('Access to this page has been denied')) {
-        console.log('🛡️ Protection page detected, handling...');
-        await this.browserManager.handleProtection();
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        console.log('🛡️ Step 1: Protection page detected');
         
-        // Get updated HTML after protection
+        // Add longer wait before handling protection
+        console.log('⏳ Step 2: Initial pause before handling protection');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        console.log('🤖 Step 3: Handling protection challenge');
+        try {
+          await this.browserManager.handleProtection();
+        } catch (protectionError) {
+          console.error('❌ Protection handling failed:', protectionError.message);
+          throw protectionError;
+        }
+        
+        console.log('⏳ Step 4: Pause after protection cleared');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        console.log('🔄 Step 5: Reloading page after protection');
         await page.goto(baseUrl, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
+        
+        console.log('📄 Step 6: Capturing post-protection HTML');
         initialHtml = await page.content();
+        
+        // Verify protection is really cleared
+        if (initialHtml.includes('checking your browser') || 
+            initialHtml.includes('Access to this page has been denied')) {
+          throw new Error('Protection still present after handling');
+        }
       }
       
       // Extract subindexes first
@@ -166,40 +187,64 @@ class SearchManager {
   async searchWithCookies(cookies) {
     try {
       const page = this.browserManager.getPage();
-      const results = [];
+      const allResults = [];
       
       console.log('🔄 Starting multi-artist search process');
       console.log(`📚 Processing ${this.artists.length} artists`);
       
       for (const artist of this.artists) {
         console.log(`\n📚 Processing artist: ${artist}`);
+        let artistResult = null;
         
-        // Reset page for each artist
-        await page.setRequestInterception(false);
-        await page.removeAllListeners('request');
-        await page.removeAllListeners('response');
-        
-        // Set fresh cookies for each artist
-        await page.setCookie(...cookies);
-        
-        // Create search URL
-        const searchUrl = `https://www.invaluable.com/search?priceResult[min]=250&upcoming=false&query=${encodeURIComponent(artist)}&keyword=${encodeURIComponent(artist)}`;
-        console.log(`🔗 Search URL: ${searchUrl}`);
-        
-        // Process this artist's search
-        const artistResult = await this.processArtistSearch(page, searchUrl, cookies);
-        results.push({
-          artist,
-          ...artistResult
-        });
-        
-        // Longer pause between artists to avoid rate limiting
-        console.log('⏳ Pausing before next artist...');
-        await page.waitForTimeout(5000);
+        try {
+          // Reset page for each artist
+          await page.setRequestInterception(false);
+          await page.removeAllListeners('request');
+          await page.removeAllListeners('response');
+          
+          // Set fresh cookies for each artist
+          await page.setCookie(...cookies);
+          
+          // Create search URL
+          const searchUrl = `https://www.invaluable.com/search?priceResult[min]=250&upcoming=false&query=${encodeURIComponent(artist)}&keyword=${encodeURIComponent(artist)}`;
+          console.log(`🔗 Search URL: ${searchUrl}`);
+          
+          // Process this artist's search
+          artistResult = await this.processArtistSearch(page, searchUrl, cookies);
+          const result = {
+            artist,
+            ...artistResult
+          };
+
+          // Save this artist's results immediately
+          console.log(`💾 Saving results for ${artist}`);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const metadata = {
+            source: 'invaluable',
+            artist,
+            timestamp,
+            searchParams: {
+              priceResult: { min: 250 },
+              sort: 'auctionDateAsc'
+            },
+            status: 'processed'
+          };
+
+          await this.saveArtistResults(result, metadata);
+          allResults.push(result);
+
+        } catch (artistError) {
+          console.error(`❌ Error processing artist ${artist}:`, artistError.message);
+          // Continue with next artist even if this one fails
+        }
+          
+          // Longer pause between artists to avoid rate limiting
+          console.log('⏳ Pausing before next artist...');
+          await new Promise(resolve => setTimeout(resolve, 5000));
       }
       
       return {
-        results,
+        results: allResults,
         timestamp: new Date().toISOString()
       };
     } catch (error) {
@@ -208,89 +253,57 @@ class SearchManager {
     }
   }
 
-  async processArtistSearch(page, url, cookies) {
+  async saveArtistResults(result, metadata) {
     try {
-      let initialHtml = null;
-      let protectionHtml = null;
-      let finalHtml = null;
+      const timestamp = metadata.timestamp;
+      const baseFolder = 'Fine Art/artists';
+      const artistId = result.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const searchId = `${metadata.source}-${artistId}-${timestamp}`;
 
-      const apiMonitor = new ApiMonitor();
-      console.log('👀 Step 3: Enabling API request interception');
-      await page.setRequestInterception(true);
-      apiMonitor.setupRequestInterception(page);
+      console.log(`📁 Saving files for ${result.artist}`);
       
-      console.log('🌐 Step 4: Navigating to search URL');
-
-      try {
-        console.log('  • Starting navigation with API monitoring');
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: constants.navigationTimeout
-        });
-        console.log('  • Navigation complete');
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        console.log('📄 Step 5: Capturing initial HTML');
-        initialHtml = await page.content();
-        console.log(`  • Size: ${(initialHtml.length / 1024).toFixed(2)} KB`);
-
-        if (initialHtml.includes('checking your browser') || 
-            initialHtml.includes('Access to this page has been denied')) {
-          console.log('🛡️ Step 6a: Protection page detected');
-          protectionHtml = initialHtml;
-          console.log('🤖 Step 6b: Processing protection challenge');
-          await this.browserManager.handleProtection();
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          console.log('✅ Step 6c: Protection cleared');
-          await page.goto(url, { waitUntil: 'networkidle0', timeout: constants.navigationTimeout });
-          initialHtml = await page.content();
-        } else {
-          console.log('✅ Step 6: No protection detected');
-        }
-
-        if (apiMonitor.hasFirstResponse()) {
-          console.log('📥 Step 7: API response captured during navigation');
-          console.log(`  • Response size: ${(apiMonitor.getFirstResponseSize() / 1024).toFixed(2)} KB`);
-        } else {
-          console.log('⚠️ Step 7: No API response captured during navigation');
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        console.log('📄 Step 8: Capturing final state');
-        finalHtml = await page.content();
-        console.log(`  • Size: ${(finalHtml.length / 1024).toFixed(2)} KB`);
-
-      } catch (error) {
-        console.log('❌ Error during process:', error.message);
+      // Save HTML files
+      if (result.html.initial) {
+        const filename = `${baseFolder}/${searchId}-initial.html`;
+        await this.storage.saveFile(filename, result.html.initial);
+        metadata.files = metadata.files || {};
+        metadata.files.initial = filename;
       }
-
-      const monitorData = apiMonitor.getData();
-      console.log('📊 Step 9: Final status:');
-      console.log(`  • API responses captured: ${monitorData.responses.length}`);
-      console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
-
-      try {
-        await page.removeAllListeners('request');
-        await page.removeAllListeners('response');
-        await page.setRequestInterception(false);
-      } catch (error) {
-        console.log('⚠️ Cleanup warning:', error.message);
+      
+      if (result.html.protection) {
+        const filename = `${baseFolder}/${searchId}-protection.html`;
+        await this.storage.saveFile(filename, result.html.protection);
+        metadata.files = metadata.files || {};
+        metadata.files.protection = filename;
       }
-
-      return {
-        html: {
-          initial: initialHtml,
-          protection: protectionHtml,
-          final: finalHtml
-        },
-        apiData: monitorData,
-        timestamp: new Date().toISOString(),
-        url
-      };
+      
+      if (result.html.final) {
+        const filename = `${baseFolder}/${searchId}-final.html`;
+        await this.storage.saveFile(filename, result.html.final);
+        metadata.files = metadata.files || {};
+        metadata.files.final = filename;
+      }
+      
+      // Save API responses
+      if (result.apiData?.responses?.length > 0) {
+        metadata.files = metadata.files || {};
+        metadata.files.api = [];
+        
+        for (let i = 0; i < result.apiData.responses.length; i++) {
+          const filename = `${baseFolder}/${searchId}-response${i + 1}.json`;
+          await this.storage.saveFile(filename, result.apiData.responses[i]);
+          metadata.files.api.push(filename);
+        }
+      }
+      
+      // Save metadata
+      const metadataFilename = `${baseFolder}/${searchId}-metadata.json`;
+      await this.storage.saveFile(metadataFilename, JSON.stringify(metadata, null, 2));
+      
+      console.log(`✅ Saved all files for ${result.artist}`);
+      return { searchId, metadata };
     } catch (error) {
-      console.error('Search with cookies error:', error);
+      console.error(`Error saving results for ${result.artist}:`, error.message);
       throw error;
     }
   }

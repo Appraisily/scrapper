@@ -84,32 +84,47 @@ class BrowserManager {
     try {
       console.log('Handling protection page...');
       
-      // Add random mouse movements
-      await this.page.mouse.move(
-        100 + Math.random() * 100,
-        100 + Math.random() * 100,
-        { steps: 10 }
-      );
-      
-      // Wait a bit and add some scrolling
-      await this.page.evaluate(() => {
-        window.scrollTo({
-          top: 100,
-          behavior: 'smooth'
-        });
-        return new Promise(r => setTimeout(r, 1000));
-      });
-      
-      // Wait for protection to clear
+      // Wait for Cloudflare challenge iframe or protection element
       await this.page.waitForFunction(() => {
-        return !document.querySelector('[id^="px-captcha"]') && 
-               !document.querySelector('.px-block');
+        return document.querySelector('#challenge-running') !== null ||
+               document.querySelector('#challenge-stage') !== null ||
+               document.querySelector('[id^="px-captcha"]') !== null;
+      }, { timeout: 10000 });
+
+      console.log('Protection elements detected, waiting for verification...');
+      
+      // Wait for Cloudflare verification to complete
+      await this.page.waitForFunction(() => {
+        // Check if challenge is complete
+        const challengeRunning = document.querySelector('#challenge-running');
+        const challengeStage = document.querySelector('#challenge-stage');
+        const pxCaptcha = document.querySelector('[id^="px-captcha"]');
+        
+        // Challenge is complete when these elements are gone
+        return !challengeRunning && !challengeStage && !pxCaptcha;
       }, { timeout: 30000 });
+      
+      console.log('Verification complete, waiting for redirect...');
+      
+      // Wait for navigation after verification
+      await this.page.waitForNavigation({
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
       
       console.log('Protection cleared');
       return true;
     } catch (error) {
-      console.error('Error handling protection:', error);
+      console.error('Error handling protection:', error.message);
+      if (error.message.includes('timeout')) {
+        console.log('Protection timeout - taking screenshot for debugging');
+        try {
+          const html = await this.page.content();
+          console.log('Current page HTML:', html.substring(0, 500) + '...');
+        } catch (e) {
+          console.error('Failed to capture debug info:', e.message);
+        }
+      }
       throw error;
     }
   }
