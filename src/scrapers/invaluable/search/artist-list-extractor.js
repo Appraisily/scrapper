@@ -1,8 +1,10 @@
 const { constants } = require('../utils');
 
 class ArtistListExtractor {
-  constructor(browserManager) {
+  constructor(browserManager, storage) {
     this.browserManager = browserManager;
+    this.storage = storage;
+    this.bucketName = process.env.STORAGE_BUCKET || 'invaluable-html-archive';
   }
 
   async extractArtistList() {
@@ -91,12 +93,21 @@ class ArtistListExtractor {
   async extractSubindexes(page) {
     return page.evaluate(() => {
       const links = Array.from(document.querySelectorAll('a[href*="/artists/A/"]'));
+      const baseUrl = 'https://www.invaluable.com';
       return links
         .map(link => {
           const text = link.textContent.trim();
           const href = link.getAttribute('href');
-          if (href.match(/\/artists\/A\/A[a-z]\/?/i)) {
-            return { text, href };
+          // Ensure href starts with a slash and doesn't include domain
+          const cleanHref = href.startsWith('http') 
+            ? href.replace(/^https?:\/\/[^\/]+/, '')
+            : href;
+            
+          if (cleanHref.match(/\/artists\/A\/A[a-z]\/?/i)) {
+            return { 
+              text, 
+              href: cleanHref // Store clean href without domain
+            };
           }
           return null;
         })
@@ -118,10 +129,17 @@ class ArtistListExtractor {
   }
 
   async processSubindex(page, subindex) {
-    const subindexUrl = `https://www.invaluable.com${subindex.href}`;
+    // Add domain to clean href
+    const subindexUrl = new URL(subindex.href, 'https://www.invaluable.com').href;
     console.log(`  • URL: ${subindexUrl}`);
+    
     let retryCount = 0;
     const maxRetries = 3;
+    let htmlStates = {
+      initial: null,
+      protection: null,
+      final: null
+    };
     
     while (retryCount < maxRetries) {
       try {
@@ -130,19 +148,57 @@ class ArtistListExtractor {
           timeout: constants.navigationTimeout
         });
         
+        console.log(`  • Capturing initial HTML for attempt ${retryCount + 1}`);
+        htmlStates.initial = await page.content();
+        
         const currentHtml = await page.content();
         if (currentHtml.includes('checking your browser') || 
             currentHtml.includes('Access to this page has been denied')) {
           console.log('  • Protection detected, handling...');
+          htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
         }
         
         await page.waitForSelector('.ais-Hits-list', { timeout: constants.defaultTimeout });
-        return await this.extractArtistsFromPage(page);
+        
+        console.log(`  • Capturing final HTML for attempt ${retryCount + 1}`);
+        htmlStates.final = await page.content();
+        
+        const artists = await this.extractArtistsFromPage(page);
+        
+        // Save HTML states for this subindex
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const subindexId = subindex.text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        
+        if (htmlStates.initial) {
+          const filename = `artists/subindexes/${subindexId}-${timestamp}-initial.html`;
+          await this.saveHtml(filename, htmlStates.initial);
+        }
+        
+        if (htmlStates.protection) {
+          const filename = `artists/subindexes/${subindexId}-${timestamp}-protection.html`;
+          await this.saveHtml(filename, htmlStates.protection);
+        }
+        
+        if (htmlStates.final) {
+          const filename = `artists/subindexes/${subindexId}-${timestamp}-final.html`;
+          await this.saveHtml(filename, htmlStates.final);
+        }
+        
+        return artists;
         
       } catch (error) {
         retryCount++;
         console.log(`  • Attempt ${retryCount} failed:`, error.message);
+        
+        // Save error state HTML if available
+        if (htmlStates.initial) {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const subindexId = subindex.text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+          const filename = `artists/subindexes/${subindexId}-${timestamp}-error-attempt-${retryCount}.html`;
+          await this.saveHtml(filename, htmlStates.initial);
+        }
+        
         if (retryCount === maxRetries) {
           console.log(`  • No artists found in subindex ${subindex.text} after ${maxRetries} attempts`);
           return [];
@@ -152,6 +208,18 @@ class ArtistListExtractor {
     }
     
     return [];
+  }
+  
+  async saveHtml(filename, content) {
+    try {
+      console.log(`  • Saving HTML: ${filename}`);
+      await this.browserManager.getPage().evaluate(ms => new Promise(r => setTimeout(r, ms)), 1000);
+      const file = this.storage.bucket(this.bucketName).file(filename);
+      await file.save(content);
+      console.log(`  • HTML saved successfully: ${filename}`);
+    } catch (error) {
+      console.error(`  • Error saving HTML ${filename}:`, error.message);
+    }
   }
 
   async extractArtistsFromPage(page) {

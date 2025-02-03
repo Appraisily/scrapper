@@ -10,16 +10,20 @@ class ArtistProcessor {
     const page = this.browserManager.getPage();
     
     try {
-      // Reset page for each artist
       await page.setRequestInterception(false);
       await page.removeAllListeners('request');
       await page.removeAllListeners('response');
       
-      // Set fresh cookies
       await page.setCookie(...cookies);
       
-      // Create search URL
-      const searchUrl = `https://www.invaluable.com/search?priceResult[min]=250&upcoming=false&query=${encodeURIComponent(artist)}&keyword=${encodeURIComponent(artist)}`;
+      // Properly construct the search URL
+      const searchParams = new URLSearchParams({
+        'priceResult[min]': '250',
+        'upcoming': 'false',
+        'query': artist,
+        'keyword': artist
+      });
+      const searchUrl = `https://www.invaluable.com/search?${searchParams.toString()}`;
       console.log(`🔗 Search URL: ${searchUrl}`);
       
       // Process search

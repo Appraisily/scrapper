@@ -6,7 +6,7 @@ class SearchManager {
   constructor(browserManager) {
     this.browserManager = browserManager;
     this.artistProcessor = new ArtistProcessor(browserManager);
-    this.artistListExtractor = new ArtistListExtractor(browserManager);
+    this.artistListExtractor = new ArtistListExtractor(browserManager, storage);
     this.resultSaver = new ResultSaver();
     this.artists = [
       'Cornelis Johannes van der Aa',
