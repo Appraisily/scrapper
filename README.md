@@ -1,15 +1,14 @@
-# Invaluable Art Market Scraper
+# Invaluable Furniture Scraper
 
-A specialized Node.js web scraper for extracting fine art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
+A specialized Node.js web scraper for extracting furniture auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
 
 ## Overview
 
-This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings, with specific focus on:
+This scraper is designed to capture both HTML content and API responses from Invaluable's furniture auction listings, with specific focus on:
 - Initial page load data
 - Protection/challenge page handling
-- "Load More" pagination responses
+- API response capture
 - Raw HTML states at various stages
-- Structured API responses
 
 ## Features
 
@@ -21,8 +20,7 @@ This scraper is designed to capture both HTML content and API responses from Inv
   - Automatic state tracking
 
 - **API Response Capture**
-  - First page results
-  - Pagination/load more responses
+  - Search results data
   - Raw JSON preservation
   - Response deduplication
 
@@ -45,7 +43,7 @@ This scraper is designed to capture both HTML content and API responses from Inv
 #### Storage Integration
 - Google Cloud Storage organization:
   ```
-  Fine Art/
+  Furniture/
   ├── html/
   │   ├── {searchId}-initial.html
   │   ├── {searchId}-protection.html
@@ -58,7 +56,7 @@ This scraper is designed to capture both HTML content and API responses from Inv
   ```
 
 #### API Features
-- RESTful endpoint
+- RESTful endpoint at `/api/invaluable/furniture`
 - Query parameter support
 - Comprehensive response format
 - Error handling
@@ -83,7 +81,7 @@ STORAGE_BUCKET=invaluable-html-archive
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd invaluable-scraper
+cd invaluable-furniture-scraper
 ```
 
 2. Install dependencies:
@@ -101,44 +99,41 @@ npm start
 ### Search Endpoint
 
 ```
-GET /api/invaluable
+GET /api/invaluable/furniture
 ```
 
 Query Parameters:
-- `query` (optional): Main search query (default: "fine art")
-- `keyword` (optional): Additional keyword filter (default: "fine art")
+- `query` (optional): Additional search query
+- `keyword` (optional): Additional keyword filter
+- `minPrice` (optional): Minimum price filter
+- `currency` (optional): Currency code (e.g., USD, EUR)
+- `upcoming` (optional): Filter for upcoming auctions only
 
 Example Response:
 ```json
 {
   "success": true,
   "message": "Search results saved successfully",
-  "searchId": "invaluable-fine-art-2024-02-02T17-38-07-714Z",
+  "searchId": "invaluable-furniture-2024-02-03T08-45-07-714Z",
   "files": {
     "html": {
-      "initial": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-initial.html",
-      "protection": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-protection.html",
-      "final": "Fine Art/html/invaluable-fine-art-2024-02-02T17-38-07-714Z-final.html"
+      "initial": "Furniture/html/invaluable-furniture-2024-02-03T08-45-07-714Z-initial.html",
+      "protection": "Furniture/html/invaluable-furniture-2024-02-03T08-45-07-714Z-protection.html",
+      "final": "Furniture/html/invaluable-furniture-2024-02-03T08-45-07-714Z-final.html"
     },
     "api": [
-      "Fine Art/api/invaluable-fine-art-2024-02-02T17-38-07-714Z-response1.json",
-      "Fine Art/api/invaluable-fine-art-2024-02-02T17-38-07-714Z-response2.json"
+      "Furniture/api/invaluable-furniture-2024-02-03T08-45-07-714Z-response1.json"
     ]
   },
   "metadata": {
     "source": "invaluable",
-    "query": "fine art",
-    "keyword": "fine art",
-    "timestamp": "2024-02-02T17:38:07.714Z",
-    "searchUrl": "https://www.invaluable.com/search?...",
+    "category": "furniture",
+    "timestamp": "2024-02-03T08:45:07.714Z",
     "searchParams": {
-      "upcoming": false,
-      "query": "fine art",
-      "keyword": "fine art",
       "priceResult": { "min": 250 },
-      "dateTimeUTCUnix": { "min": 1577833200 },
-      "dateType": "Custom",
-      "sort": "auctionDateAsc"
+      "query": "furniture",
+      "keyword": "furniture",
+      "supercategoryName": "Furniture"
     },
     "status": "pending_processing"
   }
@@ -158,17 +153,12 @@ The scraper follows these steps (with detailed logging):
    - 🤖 Process challenge
    - ✅ Clear protection
 7. ⏳ Wait for first API response
-8. 📥 Capture first API response
-9. ⌛ Pause before load more
-10. 🔍 Handle load more
-    - 🖱️ Click button
-    - ⏳ Wait for response
-    - 📥 Capture second response
-11. 📄 Capture final state
-12. 📊 Generate status report
-13. 💾 Initialize storage
-14. 📁 Save all files
-15. ✅ Complete process
+8. 📥 Capture API response
+9. 📄 Capture final state
+10. 📊 Generate status report
+11. 💾 Initialize storage
+12. 📁 Save all files
+13. ✅ Complete process
 
 ## Deployment
 
@@ -176,7 +166,7 @@ The scraper follows these steps (with detailed logging):
 
 Build the image:
 ```bash
-docker build -t invaluable-scraper .
+docker build -t invaluable-furniture-scraper .
 ```
 
 Run locally:
@@ -184,7 +174,7 @@ Run locally:
 docker run -p 8080:8080 \
   -e GOOGLE_CLOUD_PROJECT=your-project-id \
   -e STORAGE_BUCKET=invaluable-html-archive \
-  invaluable-scraper
+  invaluable-furniture-scraper
 ```
 
 ### Google Cloud Run
@@ -207,7 +197,6 @@ gcloud builds submit --config cloudbuild.yaml
 │   │       └── search/
 │   │           ├── index.js     # Search functionality
 │   │           ├── api-monitor.js # API response capture
-│   │           └── pagination-handler.js # Load more handling
 │   └── utils/
 │       └── storage.js           # GCS integration
 ├── Dockerfile                    # Container configuration

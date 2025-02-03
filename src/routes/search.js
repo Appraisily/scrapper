@@ -33,17 +33,19 @@ router.get('/', async (req, res) => {
       }
     ];
 
-    const result = await invaluableScraper.searchWithCookies(cookies);
+    const result = await invaluableScraper.searchFurniture(cookies);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     
     const metadata = {
       source: 'invaluable',
-      artists: invaluableScraper.artists,
+      category: 'furniture',
       timestamp,
       searchParams: {
         priceResult: { min: 250 },
-        sort: 'auctionDateAsc'
+        query: 'furniture',
+        keyword: 'furniture',
+        supercategoryName: 'Furniture'
       },
       cookies: cookies.map(({ name, domain }) => ({ name, domain })),
       status: 'pending_processing'

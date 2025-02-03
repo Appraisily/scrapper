@@ -19,10 +19,10 @@ curl "https://scrapper-856401495068.us-central1.run.app/api/christies/lot/12345"
 curl "https://scrapper-856401495068.us-central1.run.app/api/christies/lot/67890"
 
 # Invaluable Search
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable"
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable?currency=EUR&minPrice=1000"
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable?upcoming=true"
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable?query=impressionist&keyword=painting"
+curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable/furniture"
+curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable/furniture?currency=EUR&minPrice=1000"
+curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable/furniture?upcoming=true"
+curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable/furniture?query=antique&keyword=chair"
 
 # Test All Endpoints Script
 #!/bin/bash
@@ -30,5 +30,4 @@ curl -s "https://scrapper-856401495068.us-central1.run.app/api/art/browser" | jq
 curl -s "https://scrapper-856401495068.us-central1.run.app/api/art/api" | jq .
 curl -s "https://scrapper-856401495068.us-central1.run.app/api/christies?month=1&year=2024" | jq .
 curl -s "https://scrapper-856401495068.us-central1.run.app/api/christies/lot/12345" | jq .
-curl -s "https://scrapper-856401495068.us-central1.run.app/api/invaluable?currency=USD&minPrice=500" | jq .
 ```
