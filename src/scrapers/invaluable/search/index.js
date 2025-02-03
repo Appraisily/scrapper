@@ -70,14 +70,16 @@ class SearchScraper {
   async processArtist(artist, cookies) {
     const page = this.browserManager.getPage();
     
-    // Set cookies first, before any request interception
-    await page.setCookie(...cookies);
-
     try {
-      // Reset request interception and listeners
-      await page.setRequestInterception(false);
-      await page.removeAllListeners('request');
-      await page.removeAllListeners('response');
+      // Only set cookies for the first artist
+      if (!this.cookiesSet) {
+        console.log(`🍪 Setting ${cookies.length} cookies for first artist`);
+        await page.setCookie(...cookies);
+        this.cookiesSet = true;
+      }
+
+      const currentCookies = await page.cookies();
+      console.log(`  • Verified ${currentCookies.length} cookies set`);
       
       // Properly construct the search URL
       const searchParams = new URLSearchParams({
@@ -103,25 +105,12 @@ class SearchScraper {
 
   async processArtistSearch(page, searchUrl) {
     console.log('👀 Step 3: Enabling API request interception');
-    await page.setRequestInterception(true);
+    if (!this.apiMonitorSet) {
+      await page.setRequestInterception(true);
+      this.apiMonitorSet = true;
+    }
+
     const apiMonitor = new ApiMonitor();
-    
-    // Add request interception with cookie preservation
-    page.on('request', async (request) => {
-      const url = request.url();
-      if (url.includes('catResults')) {
-        console.log('  • Intercepted API request:', url);
-        const headers = {
-          ...request.headers(),
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        };
-        request.continue({ headers });
-      } else {
-        request.continue();
-      }
-    });
-    
     apiMonitor.setupResponseMonitoring(page);
     let searchResultsFound = false;
 
@@ -134,8 +123,18 @@ class SearchScraper {
       // Load page and capture initial HTML
       await page.goto(searchUrl, {
         waitUntil: 'networkidle0',
-        timeout: constants.navigationTimeout
+        timeout: constants.navigationTimeout,
+        referer: 'https://www.invaluable.com/',
+        waitUntil: ['domcontentloaded', 'networkidle0']
       });
+      
+      // Verify cookies after navigation
+      const postNavCookies = await page.cookies();
+      console.log(`  • Post-navigation cookies: ${postNavCookies.length}`);
+      
+      // Small delay after navigation
+      await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+      
       console.log('📄 Step 5: Capturing initial HTML');
       initialHtml = await page.content();
       
@@ -146,6 +145,11 @@ class SearchScraper {
         protectionHtml = initialHtml;
         console.log('🤖 Step 6b: Handling protection challenge');
         await this.browserManager.handleProtection();
+        
+        // Get updated cookies after protection
+        const postProtectionCookies = await page.cookies();
+        console.log(`  • Post-protection cookies: ${postProtectionCookies.length}`);
+        
         console.log('✅ Step 6c: Protection cleared, capturing new HTML');
         initialHtml = await page.content();
       }

@@ -143,55 +143,30 @@ class ArtistListScraper {
   async processSubindexes(page, subindexes) {
     const allArtists = [];
     
-    for (const subindex of subindexes) {
+    // Only process the Aa subindex
+    const aaSubindex = subindexes.find(s => s.text === 'Aa');
+    if (aaSubindex) {
       console.log(`\n🔍 Processing subindex: ${subindex.text}`);
-      const artists = await this.processSubindex(page, subindex);
+      const artists = await this.processSubindex(page, aaSubindex);
       allArtists.push(...artists);
-      await new Promise(resolve => setTimeout(resolve, 3000));
+    } else {
+      console.log('❌ Aa subindex not found');
     }
     
     return allArtists;
   }
 
-  async processSubindex(page, subindex) {
-    const subindexUrl = `https://www.invaluable.com${subindex.href}`;
-    console.log(`\n  • Processing URL: ${subindexUrl}`);
-
-    // Get current cookies before processing
-    const currentCookies = await page.cookies();
-    console.log(`  • Current cookies: ${currentCookies.length}`);
-    
     let retryCount = 0;
-    const maxRetries = 3;
-    let htmlStates = {
-      initial: null,
-      protection: null,
-      final: null
-    };
-    
-    while (retryCount < maxRetries) {
-      try {
-        console.log(`  • Starting attempt ${retryCount + 1}`);
-        
-        // Reset navigation state
-        await page.setRequestInterception(false);
-        await page.removeAllListeners('request');
-        await page.removeAllListeners('response');
-
-        // Restore cookies before navigation
-        if (currentCookies.length > 0) {
-          console.log(`  • Restoring ${currentCookies.length} cookies`);
-          await page.setCookie(...currentCookies);
-        }
-        
         console.log(`  • Navigating to URL`);
         await page.goto(subindexUrl, {
           waitUntil: 'networkidle0',
-          timeout: constants.navigationTimeout
+          timeout: constants.navigationTimeout,
+          referer: 'https://www.invaluable.com/',
+          waitUntil: ['domcontentloaded', 'networkidle0']
         });
         
-        // Use evaluate for delay instead of waitForTimeout
-        await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 2000)));
+        // Add small delay after navigation
+        await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
         
         console.log(`  • Capturing initial HTML for attempt ${retryCount + 1}`);
         htmlStates.initial = await page.content();
@@ -203,11 +178,11 @@ class ArtistListScraper {
           console.log('  • Protection detected, handling...');
           htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
-          await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 2000)));
-
-          // Update cookies after protection handling
-          currentCookies = await page.cookies();
-          console.log(`  • Updated cookies after protection: ${currentCookies.length}`);
+          await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+          
+          // Verify cookies after protection
+          const postProtectionCookies = await page.cookies();
+          console.log(`  • Post-protection cookies: ${postProtectionCookies.length}`);
         }
         
         console.log(`  • Waiting for content to load`);
@@ -216,7 +191,14 @@ class ArtistListScraper {
             const list = document.querySelector('.ais-Hits-list');
             const noResults = document.querySelector('.no-results-message');
             const loading = document.querySelector('.loading-indicator');
-            return (list !== null || noResults !== null) && !loading;
+            const ready = (list !== null || noResults !== null) && !loading;
+            console.log('Content check:', { 
+              hasList: list !== null, 
+              hasNoResults: noResults !== null, 
+              isLoading: loading !== null,
+              ready 
+            });
+            return ready;
           }, { timeout: constants.defaultTimeout });
           console.log('  • Content loaded successfully');
         } catch (waitError) {
