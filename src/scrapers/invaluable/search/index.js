@@ -126,18 +126,19 @@ class SearchScraper {
       const searchUrl = `https://www.invaluable.com/search?${searchParams.toString()}`;
       console.log(`🔗 Search URL: ${searchUrl}`);
       
-      // Process search
-      const searchResult = await this.processArtistSearch(page, searchUrl);
-      return {
-        artist,
-        ...searchResult
-      }).finally(async () => {
+      try {
+        // Process search
+        const searchResult = await this.processArtistSearch(page, searchUrl);
+        return {
+          artist,
+          ...searchResult
+        };
+      } finally {
         // Close the tab when done
         await page.close();
-      });
+      }
     } catch (error) {
       console.error(`❌ Error processing artist ${artist}:`, error.message);
-      await page.close();
       throw error;
     }
   }

@@ -1,47 +1,47 @@
 # Invaluable Art Market Scraper
 
-A specialized Node.js web scraper for extracting fine art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures.
+A specialized Node.js web scraper for extracting fine art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures. Focuses on capturing both API responses and HTML states while handling protection challenges.
 
 ## Overview
 
 This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings and artist directories, with specific focus on:
-- Artist directory crawling
-- Search results capture
+- API response monitoring and capture
+- Cookie-based authentication
 - Protection/challenge page handling
-- API response monitoring
 - Raw HTML state preservation
 
 ## Features
 
 ### Core Functionality
 
-#### Artist Directory Scraper
-- Alphabetical artist browsing
-- Subindex processing (Aa, Ab, etc.)
-- Artist count tracking
-- HTML state capture (initial, protection, final)
-- Automatic retry logic
-- Protection page handling
-
 #### Search Scraper
 - Multi-artist search processing
 - Cookie-based authentication
-- API response monitoring
-- Price range filtering
-- HTML state tracking
+- API response capture and deduplication
+- Multi-tab processing
+- Parallel artist processing
 - Independent browser instance
+
+#### API Response Monitoring
+- Response size validation
+- Duplicate detection
+- Hash-based comparison
+- First response capture
+- Response metadata tracking
 
 ### Protection Handling
 - Cloudflare challenge bypass
 - Bot detection avoidance
-- Cookie management
+- Cookie persistence and validation
 - Session persistence
-- Automatic retry logic
+- Protection state detection
 
 ### Technical Features
 
 #### Browser Automation
 - Independent browser instances per scraper
+- Multi-tab support
+- Cookie management
 - Puppeteer with Stealth Plugin
 - Human behavior simulation:
   - Random mouse movements
@@ -53,18 +53,14 @@ This scraper is designed to capture both HTML content and API responses from Inv
 - Google Cloud Storage organization:
   ```
   Fine Art/
-  ├── artists/
-  │   ├── {artistId}-{timestamp}-initial.html
-  │   ├── {artistId}-{timestamp}-protection.html
-  │   ├── {artistId}-{timestamp}-final.html
-  │   ├── {artistId}-{timestamp}-response1.json
-  │   └── {artistId}-{timestamp}-metadata.json
-  ├── subindexes/
-  │   ├── {subindexId}-{timestamp}-initial.html
-  │   ├── {subindexId}-{timestamp}-protection.html
-  │   └── {subindexId}-{timestamp}-final.html
-  └── debug/
-      └── timeout-{timestamp}.png
+  ├── api/
+  │   ├── {searchId}-{artistId}-response1.json
+  │   └── {searchId}-{artistId}-response2.json
+  ├── metadata/
+  │   └── {searchId}.json
+  └── html/
+      ├── {searchId}-{artistId}-initial.html
+      └── {searchId}-{artistId}-final.html
   ```
 
 #### API Features
@@ -109,40 +105,6 @@ npm start
 
 ## API Documentation
 
-### Artist List Endpoint
-
-```
-GET /api/invaluable/artists
-```
-
-Returns a list of artists from Invaluable's directory, starting with 'A'.
-
-Example Response:
-```json
-{
-  "success": true,
-  "artists": [
-    {
-      "name": "Artist Name",
-      "count": 42,
-      "url": "https://www.invaluable.com/artist/...",
-      "subindex": "Aa"
-    }
-  ],
-  "artistListFound": true,
-  "html": {
-    "initial": "...",
-    "protection": "...",
-    "final": "..."
-  },
-  "timestamp": "2024-02-03T09:15:51.894Z",
-  "source": "invaluable",
-  "section": "A",
-  "subindexes": ["Aa", "Ab", "Ac", ...],
-  "totalFound": 150
-}
-```
-
 ### Search Endpoint
 
 ```
@@ -158,12 +120,6 @@ Example Response:
   "results": [
     {
       "artist": "Artist Name",
-      "html": {
-        "initial": "...",
-        "protection": "...",
-        "final": "...",
-        "searchResultsFound": true
-      },
       "apiData": {
         "responses": [...]
       },
@@ -178,7 +134,7 @@ Example Response:
 
 ### Scraper Components
 
-#### Artist List Scraper
+#### API Response Monitor
 - Dedicated browser instance
 - Independent state management
 - Handles artist directory crawling
@@ -196,18 +152,12 @@ Example Response:
 
 1. Server Initialization
    - Create storage connection
-   - Initialize separate browser instances
+   - Initialize browser instance
    - Set up API endpoints
 
-2. Artist List Process
-   - Navigate to artist directory
-   - Handle protection if needed
-   - Extract subindexes
-   - Process each subindex
-   - Save HTML states and results
-
-3. Search Process
+2. Search Process
    - Process each artist independently
+   - Create new tab per artist
    - Monitor API responses
    - Handle protection
    - Save results and metadata
@@ -268,8 +218,6 @@ gcloud builds submit --config cloudbuild.yaml
 │   │       ├── browser.js       # Browser management
 │   │       ├── auth.js          # Authentication handling
 │   │       ├── utils.js         # Shared utilities
-│   │       ├── artist-list/     # Artist list scraper
-│   │       │   └── index.js     # Artist list implementation
 │   │       └── search/          # Search scraper
 │   │           ├── index.js     # Search implementation
 │   │           ├── api-monitor.js # API response capture
