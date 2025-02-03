@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const fs = require('fs').promises;
+const path = require('path');
 
 router.get('/', async (req, res) => {
   try {
@@ -8,7 +10,12 @@ router.get('/', async (req, res) => {
       throw new Error('Scraper not initialized');
     }
 
-    console.log('Fetching Invaluable Fine Art data...');
+    // Read artist list from file
+    const artistListPath = path.join(process.cwd(), 'Ab_p1.txt');
+    const artistListContent = await fs.readFile(artistListPath, 'utf8');
+    const artistList = JSON.parse(artistListContent);
+
+    console.log(`📚 Processing ${artistList.length} artists from Ab_p1.txt`);
     
     const cookies = [
       {
@@ -33,7 +40,7 @@ router.get('/', async (req, res) => {
       }
     ];
 
-    const result = await invaluableScraper.searchWithCookies(cookies);
+    const result = await invaluableScraper.searchArtistList(artistList, cookies);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     

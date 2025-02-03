@@ -8,14 +8,60 @@ class SearchScraper {
     
     this.browserManager = browserManager;
     this.storage = storage;
-    this.artists = [
-      'Dirk van der Aa',
-      'Jens Aabo'
-    ];
   }
 
   async close() {
     await this.browserManager.close();
+  }
+
+  async searchArtistList(artistList, cookies) {
+    try {
+      const allResults = [];
+      
+      console.log('🔄 Starting multi-artist search process');
+      console.log(`📚 Processing ${artistList.length} artists`);
+      
+      for (const {author} of artistList) {
+        console.log(`\n📚 Processing artist: ${author}`);
+        
+        try {
+          const result = await this.processArtist(author, cookies);
+          
+          // Save results immediately
+          console.log(`💾 Saving results for ${author}`);
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const metadata = {
+            source: 'invaluable',
+            artist: author,
+            timestamp,
+            searchParams: {
+              priceResult: { min: 250 },
+              upcoming: false,
+              sort: 'auctionDateAsc'
+            },
+            status: 'processed'
+          };
+
+          await this.saveArtistResults(result, metadata);
+          allResults.push(result);
+          
+        } catch (artistError) {
+          console.error(`❌ Error processing artist ${author}:`, artistError.message);
+        }
+        
+        // Pause between artists
+        console.log('⏳ Pausing before next artist...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+      
+      return {
+        results: allResults,
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('Multi-artist search error:', error);
+      throw error;
+    }
   }
 
   async searchWithCookies(cookies) {
@@ -119,7 +165,7 @@ class SearchScraper {
       // Properly construct the search URL
       const searchParams = new URLSearchParams({
         'priceResult[min]': '250',
-        'upcoming': 'false',
+        'upcoming': false,
         'query': artist,
         'keyword': artist
       });
@@ -127,7 +173,7 @@ class SearchScraper {
       console.log(`🔗 Search URL: ${searchUrl}`);
       
       try {
-        // Process search
+        // Process search and capture catResults API response
         const searchResult = await this.processArtistSearch(page, searchUrl);
         return {
           artist,
@@ -144,9 +190,10 @@ class SearchScraper {
   }
 
   async processArtistSearch(page, searchUrl) {
-    console.log('👀 Step 3: Enabling API request interception');
+    console.log('👀 Enabling API request interception');
     await page.setRequestInterception(true);
-    const apiMonitor = new ApiMonitor();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const apiMonitor = new ApiMonitor(this.storage, artist, timestamp);
     apiMonitor.setupRequestInterception(page);
 
     console.log('🌐 Step 4: Navigating to search URL');
@@ -199,54 +246,14 @@ class SearchScraper {
 
       const apiData = apiMonitor.getData();
       console.log('📊 Step 9: Final status:');
-      console.log(`  • API responses captured: ${apiData.responses.length}`);
-      console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
+      console.log(`  • API responses captured: ${apiData.responseCount}`);
+      console.log(`  • Responses saved: ${apiMonitor.hasResponses() ? '✅' : '❌'}`);
 
-      return {
-        apiData,
-        timestamp: new Date().toISOString()
-      };
+      return apiData;
 
      } catch (error) {
        console.error('Error during artist search:', error.message);
        throw error;
-     }
-   }
-
-  async saveArtistResults(result, metadata) {
-    try {
-      const timestamp = metadata.timestamp;
-      const baseFolder = 'Fine Art/artists';
-      const artistId = result.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      const searchId = `${metadata.source}-${artistId}-${timestamp}`;
-
-      console.log(`📁 Saving files for ${result.artist}`);
-      
-      // Save HTML files
-      metadata.files = {};
-      
-      // Save API responses
-      if (result.apiData?.responses?.length > 0) {
-        metadata.files.api = [];
-        
-        for (let i = 0; i < result.apiData.responses.length; i++) {
-          const filename = `${baseFolder}/${searchId}-response${i + 1}.json`;
-          await this.storage.saveFile(filename, result.apiData.responses[i]);
-          metadata.files.api.push(filename);
-        }
-      }
-      
-      // Save metadata
-      const metadataFilename = `${baseFolder}/${searchId}-metadata.json`;
-      await this.storage.saveFile(metadataFilename, JSON.stringify(metadata, null, 2));
-      
-      console.log(`✅ Saved all files for ${result.artist}`);
-      return { searchId, metadata };
-    } catch (error) {
-      console.error(`Error saving results for ${result.artist}:`, error.message);
-      throw error;
-    }
-  }
 }
 
 module.exports = SearchScraper;

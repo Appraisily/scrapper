@@ -16,56 +16,44 @@ class ArtistListScraper {
   async extractArtistList() {
     const page = await this.browserManager.browser.newPage();
     const apiResponses = [];
-    let debugInfo = {
-      requests: [],
-      responses: []
-    };
 
     try {
       console.log('🔄 Starting A section artist list extraction');
       console.log('📑 Setting up request interception');
 
       await page.setRequestInterception(true);
-      
-      // Monitor all requests to find the new API endpoint
+
+      // Intercept Algolia API requests
       page.on('request', request => {
         const url = request.url();
-        console.log('🔍 Request:', {
-          url: url,
-          method: request.method(),
-          resourceType: request.resourceType()
-        });
-        
-        debugInfo.requests.push({
-          url,
-          method: request.method(),
-          headers: request.headers(),
-          resourceType: request.resourceType()
-        });
+        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
+          console.log('🔍 Intercepted Algolia request:', url);
+          
+          // Add required Algolia headers
+          const headers = {
+            ...request.headers(),
+            'x-algolia-api-key': 'NO_KEY',
+            'x-algolia-application-id': '0HJBNDV358',
+            'content-type': 'application/x-www-form-urlencoded'
+          };
 
-        request.continue();
+          request.continue({ headers });
+        } else {
+          request.continue();
+        }
       });
 
+      // Intercept responses
       page.on('response', async response => {
         const url = response.url();
-        console.log('📥 Response:', {
-          url: url,
-          status: response.status(),
-          type: response.headers()['content-type']
-        });
-        
-        debugInfo.responses.push({
-          url,
-          status: response.status(),
-          headers: response.headers()
-        });
-        // Try to capture any JSON responses that might contain artist data
-        if (response.headers()['content-type']?.includes('application/json')) {
+        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
+          console.log('📥 Intercepted Algolia response');
+          console.log('  • Status:', response.status());
           
           try {
             const responseText = await response.text();
             if (responseText) {
-              console.log('  • JSON Response size:', responseText.length, 'bytes');
+              console.log('  • Response size:', responseText.length, 'bytes');
               apiResponses.push({
                 url,
                 status: response.status(),
@@ -78,6 +66,19 @@ class ArtistListScraper {
             console.error('  • Error parsing response:', error.message);
           }
         }
+      });
+
+          
+      // Set required headers for the page
+      await page.setExtraHTTPHeaders({
+        'accept': '*/*',
+        'accept-language': 'es-ES,es;q=0.9,en;q=0.8',
+        'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site'
       });
 
       // Navigate to artists page
@@ -102,8 +103,6 @@ class ArtistListScraper {
       await new Promise(resolve => setTimeout(resolve, 5000));
 
       if (apiResponses.length === 0) {
-        console.log('⚠️ No API responses captured. Debug info:', JSON.stringify(debugInfo, null, 2));
-        
         // Try scrolling to trigger more requests
         await page.evaluate(() => {
           window.scrollBy(0, 500);
@@ -113,10 +112,6 @@ class ArtistListScraper {
         await new Promise(resolve => setTimeout(resolve, 5000));
         
         if (apiResponses.length === 0) {
-          // Take a screenshot for debugging
-          await page.screenshot({path: 'debug-screenshot.png'});
-          console.log('📸 Saved debug screenshot');
-          
           throw new Error('No API response captured');
         }
       }
