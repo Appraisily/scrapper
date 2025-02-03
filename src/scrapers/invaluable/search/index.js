@@ -142,16 +142,11 @@ class SearchScraper {
     await page.setRequestInterception(true);
     const apiMonitor = new ApiMonitor();
     apiMonitor.setupRequestInterception(page);
-    let searchResultsFound = false;
 
     console.log('🌐 Step 4: Navigating to search URL');
-    let initialHtml = null;
-    let protectionHtml = null;
-    let finalHtml = null;
     let cookies = await page.cookies('https://www.invaluable.com');
 
     try {
-      // Load page and capture initial HTML
       await page.goto(searchUrl, {
         waitUntil: 'networkidle0',
         waitUntil: ['domcontentloaded', 'networkidle0'],
@@ -168,24 +163,18 @@ class SearchScraper {
       // Verify cookies after navigation
       const postNavCookies = await page.cookies('https://www.invaluable.com');
       console.log('  • Post-navigation cookies:', postNavCookies.map(c => `${c.name} (${c.domain})`).join(', '));
-      
-      console.log('📄 Step 5: Capturing initial HTML');
-      initialHtml = await page.content();
-      
+
       // Handle protection if needed
-      if (initialHtml.includes('checking your browser') || 
-          initialHtml.includes('Access to this page has been denied')) {
+      const pageContent = await page.content();
+      if (pageContent.includes('checking your browser') || 
+          pageContent.includes('Access to this page has been denied')) {
         console.log('🛡️ Step 6a: Protection page detected');
-        protectionHtml = initialHtml;
         console.log('🤖 Step 6b: Handling protection challenge');
         await this.browserManager.handleProtection();
         
         // Get updated cookies after protection
         const postProtectionCookies = await page.cookies();
         console.log('  • Post-protection cookies:', postProtectionCookies.map(c => `${c.name} (${c.domain})`).join(', '));
-        
-        console.log('✅ Step 6c: Protection cleared, capturing new HTML');
-        initialHtml = await page.content();
       }
 
       // Wait for search results or no results message
@@ -197,39 +186,17 @@ class SearchScraper {
           timeout: constants.defaultTimeout,
           polling: 1000 // Poll every second
         });
-        searchResultsFound = true;
       } catch (waitError) {
         console.log('⚠️ Search results not found within timeout, capturing current state');
         console.log('Current page URL:', page.url());
-        
-        // Take screenshot for debugging
-        try {
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const screenshotPath = `debug/timeout-${timestamp}.png`;
-          await page.screenshot({ path: screenshotPath, fullPage: true });
-          console.log('Debug screenshot saved:', screenshotPath);
-        } catch (screenshotError) {
-          console.error('Failed to save debug screenshot:', screenshotError.message);
-        }
       }
-
-      // Capture final state
-      console.log('📄 Step 8: Capturing final state');
-      finalHtml = await page.content();
 
       const apiData = apiMonitor.getData();
       console.log('📊 Step 9: Final status:');
       console.log(`  • API responses captured: ${apiData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
-      console.log(`  • Search results found: ${searchResultsFound ? '✅' : '❌'}`);
 
       return {
-        html: {
-          initial: initialHtml,
-          protection: protectionHtml,
-          final: finalHtml,
-          searchResultsFound
-        },
         apiData,
         timestamp: new Date().toISOString()
       };
@@ -251,24 +218,6 @@ class SearchScraper {
       
       // Save HTML files
       metadata.files = {};
-      
-      if (result.html.initial) {
-        const filename = `${baseFolder}/${searchId}-initial.html`;
-        await this.storage.saveFile(filename, result.html.initial);
-        metadata.files.initial = filename;
-      }
-      
-      if (result.html.protection) {
-        const filename = `${baseFolder}/${searchId}-protection.html`;
-        await this.storage.saveFile(filename, result.html.protection);
-        metadata.files.protection = filename;
-      }
-      
-      if (result.html.final) {
-        const filename = `${baseFolder}/${searchId}-final.html`;
-        await this.storage.saveFile(filename, result.html.final);
-        metadata.files.final = filename;
-      }
       
       // Save API responses
       if (result.apiData?.responses?.length > 0) {
