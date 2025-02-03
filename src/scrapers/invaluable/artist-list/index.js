@@ -143,15 +143,19 @@ class ArtistListScraper {
   async processSubindexes(page, subindexes) {
     const allArtists = [];
     
-    for (const subindex of subindexes) {
+    // Only process first few subindexes to avoid rate limiting
+    const maxSubindexes = 3;
+    const limitedSubindexes = subindexes.slice(0, maxSubindexes);
+    
+    for (const subindex of limitedSubindexes) {
       console.log(`\n🔍 Processing subindex: ${subindex.text}`);
       const artists = await this.processSubindex(page, subindex);
       allArtists.push(...artists);
       
-      // Add a delay between subindexes to avoid rate limiting
-      if (subindexes.indexOf(subindex) < subindexes.length - 1) {
+      // Add longer delay between subindexes
+      if (limitedSubindexes.indexOf(subindex) < limitedSubindexes.length - 1) {
         console.log('⏳ Pausing before next subindex...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 10000));
       }
     }
     
@@ -169,30 +173,57 @@ class ArtistListScraper {
       protection: null,
       final: null
     };
+
+    // Add random delay before starting (1-3 seconds)
+    const startDelay = 1000 + Math.floor(Math.random() * 2000);
+    await new Promise(resolve => setTimeout(resolve, startDelay));
     
     while (retryCount < maxRetries) {
       try {
         console.log(`  • Starting attempt ${retryCount + 1}`);
         
+        // Reset page state before each attempt
+        await page.setRequestInterception(false);
+        await page.removeAllListeners('request');
+        await page.removeAllListeners('response');
+        
         console.log(`  • Navigating to URL`);
         await page.goto(subindexUrl, {
-          waitUntil: 'networkidle0',
+          waitUntil: ['domcontentloaded', 'networkidle0'],
           timeout: constants.navigationTimeout
         });
         
-        await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+        // Random delay after navigation (2-4 seconds)
+        const postNavDelay = 2000 + Math.floor(Math.random() * 2000);
+        await page.evaluate(delay => new Promise(r => setTimeout(r, delay)), postNavDelay);
         
         console.log(`  • Capturing initial HTML for attempt ${retryCount + 1}`);
         htmlStates.initial = await page.content();
         
         console.log(`  • Checking for protection`);
         const currentHtml = await page.content();
-        if (currentHtml.includes('checking your browser') || 
-            currentHtml.includes('Access to this page has been denied')) {
+        const protectionTriggers = [
+          'checking your browser',
+          'Access to this page has been denied',
+          'Please unblock challenges.cloudflare.com',
+          'Ray ID:',
+          'Please enable JavaScript and cookies'
+        ];
+        
+        if (protectionTriggers.some(trigger => currentHtml.includes(trigger))) {
           console.log('  • Protection detected, handling...');
           htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
-          await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+          
+          // Longer delay after protection (4-6 seconds)
+          const postProtectionDelay = 4000 + Math.floor(Math.random() * 2000);
+          await page.evaluate(delay => new Promise(r => setTimeout(r, delay)), postProtectionDelay);
+          
+          // Verify protection was cleared
+          const postProtectionHtml = await page.content();
+          if (protectionTriggers.some(trigger => postProtectionHtml.includes(trigger))) {
+            throw new Error('Protection not cleared after handling');
+          }
         }
         
         console.log(`  • Waiting for content to load`);
@@ -202,10 +233,24 @@ class ArtistListScraper {
             const noResults = document.querySelector('.no-results-message');
             const loading = document.querySelector('.loading-indicator');
             return (list !== null || noResults !== null) && !loading;
-          }, { timeout: constants.defaultTimeout });
+          }, { 
+            timeout: constants.defaultTimeout,
+            polling: 1000 // Check every second
+          });
           console.log('  • Content loaded successfully');
         } catch (waitError) {
           console.log('  • Timeout waiting for results, capturing current state');
+          console.log('  • Current URL:', page.url());
+          
+          // Take screenshot for debugging
+          try {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const screenshotPath = `artists/debug/${subindex.text.toLowerCase()}-timeout-${timestamp}.png`;
+            await page.screenshot({ path: screenshotPath, fullPage: true });
+            console.log('  • Debug screenshot saved:', screenshotPath);
+          } catch (screenshotError) {
+            console.error('  • Failed to save debug screenshot:', screenshotError.message);
+          }
         }
         
         console.log(`  • Capturing final HTML for attempt ${retryCount + 1}`);
@@ -248,7 +293,7 @@ class ArtistListScraper {
         // Increase delay between retries
         const retryDelay = 5000 * (retryCount + 1);
         console.log(`  • Waiting ${retryDelay/1000}s before retry...`);
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        await page.evaluate(delay => new Promise(r => setTimeout(r, delay)), retryDelay);
       }
     }
     

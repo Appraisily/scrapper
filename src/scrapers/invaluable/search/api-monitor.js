@@ -4,12 +4,36 @@ class ApiMonitor {
   constructor() {
     this.responses = [];
     this.seenResponses = new Set();
-    this.firstResponseSize = 0;
+    this.firstResponseCaptured = false;
   }
 
-  setupResponseMonitoring(page) {
-    console.log('Setting up response monitoring');
+  setupRequestInterception(page) {
+    console.log('Setting up request interception');
     
+    page.on('request', async (request) => {
+      try {
+        const url = request.url();
+        if (url.includes('catResults')) {
+          console.log('  • Intercepting API request:', url);
+          const headers = request.headers();
+          request.continue({
+            headers: {
+              ...headers,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          });
+        } else {
+          request.continue();
+        }
+      } catch (error) {
+        if (!error.message.includes('Request is already handled')) {
+          console.error('Error intercepting request:', error);
+        }
+        request.continue();
+      }
+    });
+
     page.on('response', async (response) => {
       try {
         const url = response.url();
@@ -31,10 +55,10 @@ class ApiMonitor {
             this.seenResponses.add(responseHash);
             console.log('    - New unique response:', (responseData.length / 1024).toFixed(2), 'KB');
 
-            if (!this.firstResponseCaptured && responseData.length > 1000) {
+            if (!this.firstResponseCaptured) {
               this.responses.push(responseData);
               console.log('    - Saved as first response');
-              this.firstResponseSize = responseData.length;
+              this.firstResponseCaptured = true;
             }
           }).catch(error => {
             console.error('    - Error reading response:', error.message);
@@ -50,10 +74,6 @@ class ApiMonitor {
 
   hasFirstResponse() {
     return this.responses.length > 0;
-  }
-
-  getFirstResponseSize() {
-    return this.firstResponseSize;
   }
   
   getData() {

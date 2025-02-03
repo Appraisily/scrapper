@@ -76,12 +76,44 @@ class SearchScraper {
     await page.removeAllListeners('response');
     
     try {
-      // Always set cookies before each request
-      console.log(`🍪 Setting ${cookies.length} cookies for ${artist}`);
-      await page.setCookie(...cookies);
+      // Prepare cookies with required fields
+      const validatedCookies = cookies.map(cookie => {
+        const baseCookie = {
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain || '.invaluable.com',
+          path: cookie.path || '/',
+          expires: -1,
+          httpOnly: true,
+          secure: true,
+          sameSite: 'None'
+        };
 
-      const currentCookies = await page.cookies();
-      console.log(`  • Verified cookies:`, currentCookies.map(c => c.name).join(', '));
+        // Special handling for specific cookies
+        if (cookie.name === 'cf_clearance') {
+          baseCookie.sameSite = 'Lax';
+        }
+
+        return baseCookie;
+      });
+
+      // Always set cookies before each request
+      console.log(`🍪 Setting ${validatedCookies.length} cookies for ${artist}`);
+      await page.setCookie(...validatedCookies);
+
+      // Verify cookies were set
+      const currentCookies = await page.cookies('https://www.invaluable.com');
+      console.log('  • Verified cookies:', currentCookies.map(c => c.name).join(', '));
+
+      // Ensure critical cookies are present
+      const requiredCookies = ['cf_clearance', 'AZTOKEN-PROD'];
+      const missingCookies = requiredCookies.filter(name => 
+        !currentCookies.some(c => c.name === name)
+      );
+
+      if (missingCookies.length > 0) {
+        throw new Error(`Missing required cookies: ${missingCookies.join(', ')}`);
+      }
       
       // Properly construct the search URL
       const searchParams = new URLSearchParams({
@@ -108,30 +140,34 @@ class SearchScraper {
   async processArtistSearch(page, searchUrl) {
     console.log('👀 Step 3: Enabling API request interception');
     await page.setRequestInterception(true);
-
     const apiMonitor = new ApiMonitor();
-    apiMonitor.setupResponseMonitoring(page);
+    apiMonitor.setupRequestInterception(page);
     let searchResultsFound = false;
 
     console.log('🌐 Step 4: Navigating to search URL');
     let initialHtml = null;
     let protectionHtml = null;
     let finalHtml = null;
+    let cookies = await page.cookies('https://www.invaluable.com');
 
     try {
       // Load page and capture initial HTML
       await page.goto(searchUrl, {
         waitUntil: 'networkidle0',
+        waitUntil: ['domcontentloaded', 'networkidle0'],
         timeout: constants.navigationTimeout,
-        referer: 'https://www.invaluable.com/'
+        referer: 'https://www.invaluable.com/',
+        headers: {
+          'Cookie': cookies.map(c => `${c.name}=${c.value}`).join('; ')
+        }
       });
+
+      // Wait for initial page load
+      await page.evaluate(() => new Promise(r => setTimeout(r, 3000)));
       
       // Verify cookies after navigation
-      const postNavCookies = await page.cookies();
-      console.log(`  • Post-navigation cookies:`, postNavCookies.map(c => c.name).join(', '));
-      
-      // Small delay after navigation
-      await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
+      const postNavCookies = await page.cookies('https://www.invaluable.com');
+      console.log('  • Post-navigation cookies:', postNavCookies.map(c => `${c.name} (${c.domain})`).join(', '));
       
       console.log('📄 Step 5: Capturing initial HTML');
       initialHtml = await page.content();
@@ -146,7 +182,7 @@ class SearchScraper {
         
         // Get updated cookies after protection
         const postProtectionCookies = await page.cookies();
-        console.log(`  • Post-protection cookies:`, postProtectionCookies.map(c => c.name).join(', '));
+        console.log('  • Post-protection cookies:', postProtectionCookies.map(c => `${c.name} (${c.domain})`).join(', '));
         
         console.log('✅ Step 6c: Protection cleared, capturing new HTML');
         initialHtml = await page.content();
@@ -157,10 +193,24 @@ class SearchScraper {
         await page.waitForFunction(() => {
           return document.querySelector('.lot-search-result') !== null ||
                  document.querySelector('.no-results-message') !== null;
-        }, { timeout: constants.defaultTimeout });
+        }, { 
+          timeout: constants.defaultTimeout,
+          polling: 1000 // Poll every second
+        });
         searchResultsFound = true;
       } catch (waitError) {
         console.log('⚠️ Search results not found within timeout, capturing current state');
+        console.log('Current page URL:', page.url());
+        
+        // Take screenshot for debugging
+        try {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const screenshotPath = `debug/timeout-${timestamp}.png`;
+          await page.screenshot({ path: screenshotPath, fullPage: true });
+          console.log('Debug screenshot saved:', screenshotPath);
+        } catch (screenshotError) {
+          console.error('Failed to save debug screenshot:', screenshotError.message);
+        }
       }
 
       // Capture final state
