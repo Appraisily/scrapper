@@ -160,8 +160,7 @@ class ArtistListScraper {
     } catch (error) {
       console.error('Error getting artist list:', error);
       throw error;
-    "@google-cloud/storage": "^7.7.0",
-    "node-fetch": "^2.7.0"
+    }
   }
 }
 
