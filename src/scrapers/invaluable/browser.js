@@ -13,56 +13,23 @@ class BrowserManager {
   async initialize() {
     if (!this.browser) {
       console.log('Initializing browser...');
-      const width = 1920 + Math.floor(Math.random() * 100);
-      const height = 1080 + Math.floor(Math.random() * 100);
+      const width = 1920;
+      const height = 1080;
 
       this.browser = await puppeteer.launch({
         headless: 'new',
         args: [
           ...browserConfig.args,
           `--window-size=${width},${height}`,
-          '--enable-javascript',
-          '--enable-features=NetworkService,NetworkServiceInProcess',
-          '--disable-blink-features=AutomationControlled'
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=IsolateOrigins,site-per-process'
         ]
       });
 
       this.page = await this.browser.newPage();
       
-      // Set viewport with device scale factor for better rendering
-      await this.page.setViewport({ 
-        width,
-        height,
-        deviceScaleFactor: 1,
-        hasTouch: false,
-        isLandscape: true,
-        isMobile: false
-      });
-
-      // Enable request interception for resource types
-      await this.page.setRequestInterception(true);
-      this.page.on('request', request => {
-        const resourceType = request.resourceType();
-        const url = request.url();
-        
-        // Block unnecessary resources
-        if (resourceType === 'image' || resourceType === 'media' || resourceType === 'font') {
-          request.abort();
-          return;
-        }
-
-        // Allow CSS and other essential resources
-        if (resourceType === 'stylesheet' || 
-            resourceType === 'script' || 
-            resourceType === 'document' || 
-            resourceType === 'xhr' || 
-            resourceType === 'fetch') {
-          request.continue();
-          return;
-        }
-
-        request.continue();
-      });
+      // Set consistent viewport
+      await this.page.setViewport({ width, height });
       
       // Override navigator.webdriver
       await this.page.evaluateOnNewDocument(() => {
@@ -87,68 +54,18 @@ class BrowserManager {
         Object.defineProperty(navigator, 'plugins', {
           get: () => [
             {
-              0: { type: 'application/x-google-chrome-pdf' },
+              0: {type: 'application/x-google-chrome-pdf'},
               description: 'Portable Document Format',
               filename: 'internal-pdf-viewer',
               length: 1,
               name: 'Chrome PDF Plugin'
-            },
-            {
-              0: { type: 'application/pdf' },
-              description: 'Portable Document Format',
-              filename: 'internal-pdf-viewer',
-              length: 1,
-              name: 'Chrome PDF Viewer'
-            },
-            {
-              0: { type: 'application/x-nacl' },
-              description: 'Native Client',
-              filename: 'internal-nacl-plugin',
-              length: 1,
-              name: 'Native Client'
             }
           ]
         });
-        
-        // Add WebGL support
-        HTMLCanvasElement.prototype.getContext = ((original) => {
-          return function(type, attributes) {
-            if (type === 'webgl' || type === 'experimental-webgl') {
-              attributes = Object.assign({}, attributes, {
-                preserveDrawingBuffer: true
-              });
-            }
-            return original.call(this, type, attributes);
-          };
-        })(HTMLCanvasElement.prototype.getContext);
       });
       
       await this.page.setExtraHTTPHeaders(browserConfig.headers);
       await this.page.setUserAgent(browserConfig.userAgent);
-
-      // Add additional browser features
-      await this.page.evaluateOnNewDocument(() => {
-        // Add WebRTC support
-        window.RTCPeerConnection = class RTCPeerConnection {
-          constructor() { }
-          createDataChannel() { return {}; }
-          createOffer() { return Promise.resolve({}); }
-          setLocalDescription() { return Promise.resolve(); }
-        };
-
-        // Add media devices
-        navigator.mediaDevices = {
-          enumerateDevices: async () => []
-        };
-
-        // Add battery API
-        navigator.getBattery = async () => ({
-          charging: true,
-          chargingTime: 0,
-          dischargingTime: Infinity,
-          level: 0.95
-        });
-      });
       
       // Add random mouse movements and scrolling
       await this.addHumanBehavior(this.page);
@@ -167,32 +84,47 @@ class BrowserManager {
     try {
       console.log('Handling protection page...');
       
-      // Add random mouse movements
-      await this.page.mouse.move(
-        100 + Math.random() * 100,
-        100 + Math.random() * 100,
-        { steps: 10 }
-      );
-      
-      // Wait a bit and add some scrolling
-      await this.page.evaluate(() => {
-        window.scrollTo({
-          top: 100,
-          behavior: 'smooth'
-        });
-        return new Promise(r => setTimeout(r, 1000));
-      });
-      
-      // Wait for protection to clear
+      // Wait for Cloudflare challenge iframe or protection element
       await this.page.waitForFunction(() => {
-        return !document.querySelector('[id^="px-captcha"]') && 
-               !document.querySelector('.px-block');
+        return document.querySelector('#challenge-running') !== null ||
+               document.querySelector('#challenge-stage') !== null ||
+               document.querySelector('[id^="px-captcha"]') !== null;
+      }, { timeout: 10000 });
+
+      console.log('Protection elements detected, waiting for verification...');
+      
+      // Wait for Cloudflare verification to complete
+      await this.page.waitForFunction(() => {
+        // Check if challenge is complete
+        const challengeRunning = document.querySelector('#challenge-running');
+        const challengeStage = document.querySelector('#challenge-stage');
+        const pxCaptcha = document.querySelector('[id^="px-captcha"]');
+        
+        // Challenge is complete when these elements are gone
+        return !challengeRunning && !challengeStage && !pxCaptcha;
       }, { timeout: 30000 });
+      
+      console.log('Verification complete, waiting for redirect...');
+      
+      // Wait for navigation after verification
+      await this.page.waitForNavigation({
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
       
       console.log('Protection cleared');
       return true;
     } catch (error) {
-      console.error('Error handling protection:', error);
+      console.error('Error handling protection:', error.message);
+      if (error.message.includes('timeout')) {
+        console.log('Protection timeout - taking screenshot for debugging');
+        try {
+          const html = await this.page.content();
+          console.log('Current page HTML:', html.substring(0, 500) + '...');
+        } catch (e) {
+          console.error('Failed to capture debug info:', e.message);
+        }
+      }
       throw error;
     }
   }

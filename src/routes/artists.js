@@ -11,16 +11,18 @@ router.get('/', async (req, res) => {
     console.log('Fetching Invaluable artist list...');
 
     const result = await invaluableScraper.getArtistList();
-    const { section, html } = result;
+    const { section, initialHtml, finalHtml } = result;
     
     // Save to storage
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const jsonFilename = `artists/${section}.json`;
-    const htmlFilename = `artists/${section}-${timestamp}.html`;
+    const initialHtmlFilename = `artists/${section}-${timestamp}-initial.html`;
+    const finalHtmlFilename = `artists/${section}-${timestamp}-final.html`;
     
-    // Save both JSON and HTML
+    // Save JSON and both HTML states
     const jsonUrl = await req.app.locals.storage.saveJsonFile(jsonFilename, result);
-    const htmlUrl = await req.app.locals.storage.saveJsonFile(htmlFilename, html);
+    const initialHtmlUrl = await req.app.locals.storage.saveJsonFile(initialHtmlFilename, initialHtml);
+    const finalHtmlUrl = await req.app.locals.storage.saveJsonFile(finalHtmlFilename, finalHtml);
     
     res.json({
       success: true,
@@ -32,8 +34,14 @@ router.get('/', async (req, res) => {
           url: jsonUrl
         },
         html: {
-          path: htmlFilename,
-          url: htmlUrl
+          initial: {
+            path: initialHtmlFilename,
+            url: initialHtmlUrl
+          },
+          final: {
+            path: finalHtmlFilename,
+            url: finalHtmlUrl
+          }
         }
       },
       section

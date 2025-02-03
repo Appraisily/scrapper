@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const artistsRouter = require('./routes/artists');
 const searchRouter = require('./routes/search');
 const InvaluableScraper = require('./scrapers/invaluable');
 const storage = require('./utils/storage');
@@ -75,7 +76,8 @@ async function startServer() {
   try {
     await initializeScraper();
     
-    app.use('/api/invaluable/furniture', searchRouter);
+    app.use('/api/invaluable/artists', artistsRouter);
+    app.use('/api/invaluable', searchRouter);
     
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`Server is now listening on port ${port}`);
