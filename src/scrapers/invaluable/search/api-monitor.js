@@ -18,17 +18,19 @@ class ApiMonitor {
   setupRequestInterception(page) {
     console.log('Setting up request interception');
     
+    // Intercept Algolia API requests
     page.on('request', async (request) => {
       try {
         const url = request.url();
-        if (url.includes('catResults') || url.includes('invaluable.com/search')) {
+        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
           console.log('  • Intercepting API request:', url);
           const headers = request.headers();
           request.continue({
             headers: {
               ...headers,
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
+              'x-algolia-api-key': 'NO_KEY',
+              'x-algolia-application-id': '0HJBNDV358',
+              'content-type': 'application/x-www-form-urlencoded'
             }
           });
         } else {
@@ -45,7 +47,7 @@ class ApiMonitor {
     page.on('response', async (response) => {
       try {
         const url = response.url();
-        if ((url.includes('catResults') || url.includes('invaluable.com/search')) && response.status() === 200) {
+        if (url.includes('algolia.invaluable.com/1/indexes/*/queries') && response.status() === 200) {
           console.log('  • Received API response:', url);
           response.text().then(responseData => {
             if (responseData.length < 1000) {
@@ -84,8 +86,8 @@ class ApiMonitor {
       // Create a clean artist ID for filenames
       const artistId = this.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       
-      // Organize files in a clear structure:
-      // invaluable/
+      // Organize files in a clear structure for Algolia responses:
+      // invaluable/algolia/
       //   artists/
       //     {artist-id}/
       //       {timestamp}/
@@ -94,7 +96,7 @@ class ApiMonitor {
       //         metadata.json
       
       const responseCount = this.savedFiles.length + 1;
-      const filename = `invaluable/artists/${artistId}/${this.timestamp}/responses/response-${responseCount}.json`;
+      const filename = `invaluable/algolia/artists/${artistId}/${this.timestamp}/responses/response-${responseCount}.json`;
       
       // Save the response with metadata
       const responseWithMetadata = {
@@ -108,7 +110,7 @@ class ApiMonitor {
       this.savedFiles.push(filename);
       
       // Save metadata file
-      const metadataFilename = `invaluable/artists/${artistId}/${this.timestamp}/metadata.json`;
+      const metadataFilename = `invaluable/algolia/artists/${artistId}/${this.timestamp}/metadata.json`;
       const metadata = {
         artist: this.artist,
         timestamp: this.timestamp,
@@ -117,6 +119,7 @@ class ApiMonitor {
           upcoming: false,
           sort: 'auctionDateAsc'
         },
+        type: 'algolia',
         responseFiles: this.savedFiles,
         status: 'captured'
       };

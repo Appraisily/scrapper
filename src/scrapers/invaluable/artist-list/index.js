@@ -16,10 +16,36 @@ class ArtistListScraper {
   async extractArtistList() {
     const page = await this.browserManager.browser.newPage();
     const apiResponses = [];
+    
+    // Required cookies for Algolia API
+    const cookies = [
+      {
+        name: 'AZTOKEN-PROD',
+        value: '4F562873-F229-4346-A846-37E9A451FA9E',
+        domain: '.invaluable.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'None'
+      },
+      {
+        name: 'cf_clearance',
+        value: 'Yq4QHU.y14z93vU3CmLCK80CU7Pq6pgupmW0eM8k548-1738320515-1.2.1.1-ZFXBFgIPHghfvwwfhRbZx27.6zPihqfQ4vGP0VY1v66mKc.wwAOVRiRJhK6ouVt_.wMB30bkeY0r9NK.KUTU4gu7GzZxbyh0EH_gE36kcnHDvGATrI_vFs9y1XHq3PgtlHmBUflqgjcS6x9MC5YpXoeELPYiT0k59IPMn..1cHED7zV6T78hILKinjM6hZ.ZeQwetIN6SPmuvXb7V2z2ddJa64Vg_zUi.euce0SjjJr5ti7tHWoFsTV1DO1MkFwDfUpy1yTCdESho.EwyRgfdfRAlx6njkTmlWNkp1aXcXU',
+        domain: '.invaluable.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax'
+      }
+    ];
 
     try {
       console.log('🔄 Starting A section artist list extraction');
       console.log('📑 Setting up request interception');
+
+      // Set cookies before navigation
+      console.log('🍪 Setting required cookies');
+      await page.setCookie(...cookies);
 
       await page.setRequestInterception(true);
 
@@ -34,6 +60,7 @@ class ArtistListScraper {
             ...request.headers(),
             'x-algolia-api-key': 'NO_KEY',
             'x-algolia-application-id': '0HJBNDV358',
+            'Cookie': cookies.map(c => `${c.name}=${c.value}`).join('; '),
             'content-type': 'application/x-www-form-urlencoded'
           };
 

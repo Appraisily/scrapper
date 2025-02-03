@@ -41,6 +41,13 @@ class InvaluableScraper {
     return this.artistListScraper.extractArtistList();
   }
 
+  async searchArtistList(artistList, cookies) {
+    if (!this.searchScraper) {
+      throw new Error('Search scraper not initialized');
+    }
+    return this.searchScraper.searchArtistList(artistList, cookies);
+  }
+
   async searchWithCookies(cookies) {
     if (!this.searchScraper) {
       throw new Error('Search scraper not initialized');
