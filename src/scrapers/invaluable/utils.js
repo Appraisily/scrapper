@@ -11,7 +11,7 @@ exports.selectors = {
 };
 
 exports.constants = {
-  defaultTimeout: 30000,
+  defaultTimeout: 45000,
   navigationTimeout: 60000,
   typingDelay: 150,
   scrollDelay: 100,

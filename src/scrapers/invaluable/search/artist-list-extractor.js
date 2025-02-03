@@ -49,13 +49,41 @@ class ArtistListExtractor {
       }
       
       console.log('🔍 Step 4: Waiting for artist list');
+      let artistListFound = false;
+      
+      try {
       await page.waitForFunction(() => {
-        return document.querySelector('.ais-Hits-list') !== null ||
-               document.querySelector('.no-results-message') !== null;
+        const list = document.querySelector('.ais-Hits-list');
+        const noResults = document.querySelector('.no-results-message');
+        const loading = document.querySelector('.loading-indicator');
+        
+        // Consider it ready if we have results or no results message, and no loading indicator
+        return (list !== null || noResults !== null) && !loading;
       }, { timeout: constants.defaultTimeout });
+        artistListFound = true;
+        console.log('✅ Artist list found');
+      } catch (waitError) {
+        console.log('⚠️ Artist list not found within timeout, capturing current state');
+        // Take screenshot for debugging
+        try {
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          const screenshotPath = `artists/debug/timeout-${timestamp}.png`;
+          await page.screenshot({ path: '/tmp/debug.png', fullPage: true });
+          const file = this.storage.bucket(this.bucketName).file(screenshotPath);
+          await file.save(require('fs').readFileSync('/tmp/debug.png'));
+          console.log(`  • Debug screenshot saved: ${screenshotPath}`);
+        } catch (screenshotError) {
+          console.error('Failed to save debug screenshot:', screenshotError.message);
+        }
+      }
       
       console.log('📑 Step 5: Extracting subindexes');
-      const subindexes = await this.extractSubindexes(page);
+      let subindexes = [];
+      try {
+        subindexes = await this.extractSubindexes(page);
+      } catch (error) {
+        console.log('⚠️ Error extracting subindexes:', error.message);
+      }
       console.log(`Found ${subindexes.length} subindexes`);
       
       console.log('🎨 Step 6: Processing artist data');
@@ -68,6 +96,7 @@ class ArtistListExtractor {
       const result = {
         success: true,
         artists: allArtists,
+        artistListFound,
         html: {
           initial: initialHtml,
           protection: protectionHtml,
@@ -131,7 +160,7 @@ class ArtistListExtractor {
   async processSubindex(page, subindex) {
     // Add domain to clean href
     const subindexUrl = new URL(subindex.href, 'https://www.invaluable.com').href;
-    console.log(`  • URL: ${subindexUrl}`);
+    console.log(`\n  • Processing URL: ${subindexUrl}`);
     
     let retryCount = 0;
     const maxRetries = 3;
@@ -155,11 +184,22 @@ class ArtistListExtractor {
         if (currentHtml.includes('checking your browser') || 
             currentHtml.includes('Access to this page has been denied')) {
           console.log('  • Protection detected, handling...');
+          await page.waitForTimeout(2000); // Small delay before handling protection
           htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
+          await page.waitForTimeout(2000); // Small delay after protection
         }
         
-        await page.waitForSelector('.ais-Hits-list', { timeout: constants.defaultTimeout });
+        try {
+          await page.waitForFunction(() => {
+            const list = document.querySelector('.ais-Hits-list');
+            const noResults = document.querySelector('.no-results-message');
+            const loading = document.querySelector('.loading-indicator');
+            return (list !== null || noResults !== null) && !loading;
+          }, { timeout: constants.defaultTimeout });
+        } catch (waitError) {
+          console.log('  • Timeout waiting for results, capturing current state');
+        }
         
         console.log(`  • Capturing final HTML for attempt ${retryCount + 1}`);
         htmlStates.final = await page.content();

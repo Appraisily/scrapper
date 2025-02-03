@@ -43,6 +43,7 @@ class ArtistProcessor {
     await page.setRequestInterception(true);
     const apiMonitor = new ApiMonitor();
     apiMonitor.setupRequestInterception(page);
+    let searchResultsFound = false;
 
     console.log('🌐 Step 4: Navigating to search URL');
     let initialHtml = null;
@@ -70,10 +71,15 @@ class ArtistProcessor {
       }
 
       // Wait for search results or no results message
-      await page.waitForFunction(() => {
-        return document.querySelector('.lot-search-result') !== null ||
-               document.querySelector('.no-results-message') !== null;
-      }, { timeout: constants.defaultTimeout });
+      try {
+        await page.waitForFunction(() => {
+          return document.querySelector('.lot-search-result') !== null ||
+                 document.querySelector('.no-results-message') !== null;
+        }, { timeout: 45000 }); // Increased timeout
+        searchResultsFound = true;
+      } catch (waitError) {
+        console.log('⚠️ Search results not found within timeout, capturing current state');
+      }
 
       // Capture final state
       console.log('📄 Step 8: Capturing final state');
@@ -83,12 +89,14 @@ class ArtistProcessor {
       console.log('📊 Step 9: Final status:');
       console.log(`  • API responses captured: ${apiData.responses.length}`);
       console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
+      console.log(`  • Search results found: ${searchResultsFound ? '✅' : '❌'}`);
 
       return {
         html: {
           initial: initialHtml,
           protection: protectionHtml,
-          final: finalHtml
+          final: finalHtml,
+          searchResultsFound
         },
         apiData,
         timestamp: new Date().toISOString()
