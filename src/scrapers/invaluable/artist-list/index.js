@@ -146,7 +146,7 @@ class ArtistListScraper {
     // Only process the Aa subindex
     const aaSubindex = subindexes.find(s => s.text === 'Aa');
     if (aaSubindex) {
-      console.log(`\n🔍 Processing subindex: ${subindex.text}`);
+      console.log(`\n🔍 Processing subindex: ${aaSubindex.text}`);
       const artists = await this.processSubindex(page, aaSubindex);
       allArtists.push(...artists);
     } else {
@@ -156,16 +156,28 @@ class ArtistListScraper {
     return allArtists;
   }
 
+  async processSubindex(page, subindex) {
+    const subindexUrl = `https://www.invaluable.com${subindex.href}`;
+    console.log(`\n  • Processing URL: ${subindexUrl}`);
+    
     let retryCount = 0;
+    const maxRetries = 3;
+    let htmlStates = {
+      initial: null,
+      protection: null,
+      final: null
+    };
+    
+    while (retryCount < maxRetries) {
+      try {
+        console.log(`  • Starting attempt ${retryCount + 1}`);
+        
         console.log(`  • Navigating to URL`);
         await page.goto(subindexUrl, {
           waitUntil: 'networkidle0',
-          timeout: constants.navigationTimeout,
-          referer: 'https://www.invaluable.com/',
-          waitUntil: ['domcontentloaded', 'networkidle0']
+          timeout: constants.navigationTimeout
         });
         
-        // Add small delay after navigation
         await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
         
         console.log(`  • Capturing initial HTML for attempt ${retryCount + 1}`);
@@ -179,10 +191,6 @@ class ArtistListScraper {
           htmlStates.protection = currentHtml;
           await this.browserManager.handleProtection();
           await page.evaluate(() => new Promise(r => setTimeout(r, 2000)));
-          
-          // Verify cookies after protection
-          const postProtectionCookies = await page.cookies();
-          console.log(`  • Post-protection cookies: ${postProtectionCookies.length}`);
         }
         
         console.log(`  • Waiting for content to load`);
@@ -191,14 +199,7 @@ class ArtistListScraper {
             const list = document.querySelector('.ais-Hits-list');
             const noResults = document.querySelector('.no-results-message');
             const loading = document.querySelector('.loading-indicator');
-            const ready = (list !== null || noResults !== null) && !loading;
-            console.log('Content check:', { 
-              hasList: list !== null, 
-              hasNoResults: noResults !== null, 
-              isLoading: loading !== null,
-              ready 
-            });
-            return ready;
+            return (list !== null || noResults !== null) && !loading;
           }, { timeout: constants.defaultTimeout });
           console.log('  • Content loaded successfully');
         } catch (waitError) {
