@@ -14,92 +14,125 @@ class SearchManager {
   async getArtistList() {
     try {
       const page = this.browserManager.getPage();
-      console.log('🔄 Starting artist list extraction');
+      console.log('🔄 Starting A section artist list extraction');
       
       const firstLetter = 'A';
-      const subLetter = 'a';
-      const section = `${firstLetter}${subLetter}`;
-      const baseUrl = `https://www.invaluable.com/artists/${firstLetter}/${firstLetter}${subLetter}/?pageType=soldAtAuction`;
+      const baseUrl = `https://www.invaluable.com/artists/${firstLetter}/?pageType=soldAtAuction`;
       console.log('🌐 Navigating to base page:', baseUrl);
       
-      let pageHtml = '';
+      let initialHtml = '';
+      let finalHtml = '';
       
       await page.goto(baseUrl, {
         waitUntil: 'networkidle0',
         timeout: constants.navigationTimeout
       });
       
+      // Capture initial HTML immediately
+      console.log('📄 Capturing initial HTML state');
+      initialHtml = await page.content();
+      
       // Handle protection if needed
-      pageHtml = await page.content();
-      if (pageHtml.includes('checking your browser') || 
-          pageHtml.includes('Access to this page has been denied')) {
+      if (initialHtml.includes('checking your browser') || 
+          initialHtml.includes('Access to this page has been denied')) {
         console.log('🛡️ Protection page detected, handling...');
         await this.browserManager.handleProtection();
-        await page.waitForTimeout(2000);
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Get updated HTML after protection
         await page.goto(baseUrl, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
-        pageHtml = await page.content();
+        initialHtml = await page.content();
       }
       
       // Extract subindexes first
       console.log('📑 Extracting subindexes');
       const subindexes = await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('.ais-Hits-list a'));
-        return links.map(link => {
-          const text = link.textContent.trim();
-          const href = link.getAttribute('href');
-          return { text, href };
-        });
+        const links = Array.from(document.querySelectorAll('a[href*="/artists/A/"]'));
+        return links
+          .map(link => {
+            const text = link.textContent.trim();
+            const href = link.getAttribute('href');
+            // Only include Aa, Ab, Ac, etc.
+            if (href.match(/\/artists\/A\/A[a-z]\/?/i)) {
+              return { text, href };
+            }
+            return null;
+          })
+          .filter(item => item !== null);
       });
       
       console.log(`Found ${subindexes.length} subindexes:`, subindexes.map(s => s.text).join(', '));
       
-      // Process each subindex
+      // Process each A subindex
       const allArtists = [];
       
       for (const subindex of subindexes) {
         console.log(`\n🔍 Processing subindex: ${subindex.text}`);
         
-        // Navigate to subindex page
-        await page.goto(subindex.href, {
+        const subindexUrl = `https://www.invaluable.com${subindex.href}`;
+        console.log(`  • URL: ${subindexUrl}`);
+        
+        await page.goto(subindexUrl, {
           waitUntil: 'networkidle0',
           timeout: constants.navigationTimeout
         });
         
-        // Wait for artist list to load
-        await page.waitForSelector('.ais-Hits-list', { timeout: constants.defaultTimeout });
+        // Handle protection if needed
+        const currentHtml = await page.content();
+        if (currentHtml.includes('checking your browser') || 
+            currentHtml.includes('Access to this page has been denied')) {
+          console.log('  • Protection detected, handling...');
+          await this.browserManager.handleProtection();
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          await page.goto(subindexUrl, {
+            waitUntil: 'networkidle0',
+            timeout: constants.navigationTimeout
+          });
+        }
         
-        // Extract artists from this subindex
+        // Wait for artist list
+        try {
+          await page.waitForSelector('.ais-Hits-list', { timeout: constants.defaultTimeout });
+        } catch (error) {
+          console.log(`  • No artists found in subindex ${subindex.text}`);
+          continue;
+        }
+        
+        // Extract artists
         const artists = await page.evaluate(() => {
           const items = Array.from(document.querySelectorAll('.ais-Hits-item'));
           return items.map(item => {
             const link = item.querySelector('a');
             const span = item.querySelector('span');
             if (!link || !span) return null;
-            
+
             const url = link.href;
             const fullText = span.textContent;
             const match = fullText.match(/^(.+?)\s*\((\d+)\)$/);
-            
+
             if (!match) return null;
-            
+
             return {
               name: match[1].trim(),
               count: parseInt(match[2], 10),
-              url: url
+              url: url,
+              subindex: link.href.split('/artists/A/')[1]?.split('/')[0] || ''
             };
           }).filter(item => item !== null);
         });
         
         console.log(`📝 Found ${artists.length} artists in subindex ${subindex.text}`);
+        if (artists.length > 0) {
+          console.log(`  • Sample artist: ${artists[0].name} (${artists[0].count})`);
+        }
+        
         allArtists.push(...artists);
         
-        // Brief pause between subindexes
-        await page.waitForTimeout(1000);
+        // Longer pause between subindexes to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
       
       console.log(`\n📊 Total artists found across all subindexes: ${allArtists.length}`);
@@ -107,13 +140,18 @@ class SearchManager {
       // Sort artists by name
       allArtists.sort((a, b) => a.name.localeCompare(b.name));
       
+      // Capture final HTML state
+      console.log('📄 Capturing final HTML state');
+      finalHtml = await page.content();
+      
       return {
         success: true,
         artists: allArtists,
-        html: pageHtml,
+        initialHtml,
+        finalHtml,
         timestamp: new Date().toISOString(),
         source: 'invaluable',
-        section,
+        section: 'A',
         url: baseUrl,
         subindexes: subindexes.map(s => s.text),
         totalFound: allArtists.length
@@ -191,7 +229,7 @@ class SearchManager {
         });
         console.log('  • Navigation complete');
 
-        await page.waitForTimeout(2000);
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         console.log('📄 Step 5: Capturing initial HTML');
         initialHtml = await page.content();
@@ -203,7 +241,7 @@ class SearchManager {
           protectionHtml = initialHtml;
           console.log('🤖 Step 6b: Processing protection challenge');
           await this.browserManager.handleProtection();
-          await page.waitForTimeout(2000);
+          await new Promise(resolve => setTimeout(resolve, 2000));
           console.log('✅ Step 6c: Protection cleared');
           await page.goto(url, { waitUntil: 'networkidle0', timeout: constants.navigationTimeout });
           initialHtml = await page.content();
@@ -218,7 +256,7 @@ class SearchManager {
           console.log('⚠️ Step 7: No API response captured during navigation');
         }
 
-        await page.waitForTimeout(2000);
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         console.log('📄 Step 8: Capturing final state');
         finalHtml = await page.content();
