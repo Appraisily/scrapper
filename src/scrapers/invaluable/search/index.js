@@ -192,16 +192,17 @@ class SearchScraper {
   async processArtistSearch(page, searchUrl) {
     console.log('👀 Enabling API request interception');
     await page.setRequestInterception(true);
+    
+    // Initialize API monitor with cookies
     const apiMonitor = new ApiMonitor();
-    apiMonitor.setupRequestInterception(page);
+    const cookies = await page.cookies();
+    apiMonitor.setupRequestInterception(page, cookies);
 
     console.log('🌐 Step 4: Navigating to search URL');
-    let cookies = await page.cookies('https://www.invaluable.com');
 
     try {
       await page.goto(searchUrl, {
-        waitUntil: 'networkidle0',
-        waitUntil: ['domcontentloaded', 'networkidle0'],
+        waitUntil: 'networkidle2',
         timeout: constants.navigationTimeout,
         referer: 'https://www.invaluable.com/',
         headers: {
@@ -244,15 +245,20 @@ class SearchScraper {
       }
 
       const apiData = apiMonitor.getData();
+      if (!apiData || !apiData.responses) {
+        console.log('⚠️ No API data captured');
+        return { responses: [] };
+      }
+
       console.log('📊 Step 9: Final status:');
       console.log(`  • API responses captured: ${apiData.responses.length}`);
-      console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
+      console.log(`  • Valid response: ${apiMonitor.hasValidResponse() ? '✅' : '❌'}`);
 
       return apiData;
 
      } catch (error) {
        console.error('Error during artist search:', error.message);
-       throw error;
+       return { responses: [] };
      }
    }
 
