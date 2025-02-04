@@ -192,11 +192,7 @@ class SearchScraper {
   async processArtistSearch(page, searchUrl) {
     console.log('👀 Enabling API request interception');
     await page.setRequestInterception(true);
-    const artist = page.url().includes('query=') ? 
-      decodeURIComponent(page.url().split('query=')[1].split('&')[0]) : 
-      'Unknown Artist';
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const apiMonitor = new ApiMonitor(this.storage, artist, timestamp);
+    const apiMonitor = new ApiMonitor();
     apiMonitor.setupRequestInterception(page);
 
     console.log('🌐 Step 4: Navigating to search URL');
@@ -249,8 +245,8 @@ class SearchScraper {
 
       const apiData = apiMonitor.getData();
       console.log('📊 Step 9: Final status:');
-      console.log(`  • API responses captured: ${apiData.responseCount}`);
-      console.log(`  • Responses saved: ${apiMonitor.hasResponses() ? '✅' : '❌'}`);
+      console.log(`  • API responses captured: ${apiData.responses.length}`);
+      console.log(`  • First response: ${apiMonitor.hasFirstResponse() ? '✅' : '❌'}`);
 
       return apiData;
 
@@ -259,6 +255,53 @@ class SearchScraper {
        throw error;
      }
    }
+
+  async saveArtistResults(result, metadata) {
+    try {
+      const timestamp = metadata.timestamp;
+      const baseFolder = 'invaluable/algolia/artists';
+      const artistId = metadata.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const searchId = `${metadata.source}-${artistId}-${timestamp}`;
+
+      console.log(`📁 Saving files for ${metadata.artist}`);
+      
+      // Save API responses
+      const savedFiles = [];
+      if (result.apiData?.responses?.length > 0) {
+        for (let i = 0; i < result.apiData.responses.length; i++) {
+          const filename = `${baseFolder}/${artistId}/${timestamp}/responses/response-${i + 1}.json`;
+          
+          // Save response with metadata
+          const responseWithMetadata = {
+            artist: metadata.artist,
+            timestamp: new Date().toISOString(),
+            searchParams: metadata.searchParams,
+            data: result.apiData.responses[i]
+          };
+          
+          await this.storage.saveFile(filename, JSON.stringify(responseWithMetadata, null, 2));
+          savedFiles.push(filename);
+          console.log(`  • Saved response ${i + 1} to ${filename}`);
+        }
+      }
+      
+      // Save metadata file
+      const metadataFilename = `${baseFolder}/${artistId}/${timestamp}/metadata.json`;
+      const finalMetadata = {
+        ...metadata,
+        files: savedFiles,
+        status: 'processed'
+      };
+      
+      await this.storage.saveFile(metadataFilename, JSON.stringify(finalMetadata, null, 2));
+      console.log(`  • Saved metadata to ${metadataFilename}`);
+      
+      return { searchId, metadata: finalMetadata };
+    } catch (error) {
+      console.error(`Error saving results for ${metadata.artist}:`, error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = SearchScraper;

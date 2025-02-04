@@ -5,7 +5,7 @@ A specialized Node.js web scraper for extracting fine art auction data from Inva
 ## Overview
 
 This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings and artist directories, with specific focus on:
-- API response monitoring and capture
+- Algolia API response monitoring and capture
 - Cookie-based authentication
 - Protection/challenge page handling
 - Raw HTML state preservation
@@ -14,10 +14,17 @@ This scraper is designed to capture both HTML content and API responses from Inv
 
 ### Core Functionality
 
+#### Artist Directory Scraper
+- Algolia API response capture
+- Cookie-based authentication
+- Multi-page processing
+- Protection state handling
+- Response deduplication
+
 #### Search Scraper
 - Multi-artist search processing
 - Cookie-based authentication
-- API response capture and deduplication
+- catResults API response capture
 - Multi-tab processing
 - Parallel artist processing
 - Independent browser instance
@@ -52,15 +59,15 @@ This scraper is designed to capture both HTML content and API responses from Inv
 #### Storage Integration
 - Google Cloud Storage organization:
   ```
-  Fine Art/
-  ├── api/
-  │   ├── {searchId}-{artistId}-response1.json
-  │   └── {searchId}-{artistId}-response2.json
-  ├── metadata/
-  │   └── {searchId}.json
-  └── html/
-      ├── {searchId}-{artistId}-initial.html
-      └── {searchId}-{artistId}-final.html
+  invaluable/
+  ├── algolia/
+  │   └── artists/
+  │       └── {artistId}/
+  │           └── {timestamp}/
+  │               ├── responses/
+  │               │   ├── response-1.json
+  │               │   └── response-2.json
+  │               └── metadata.json
   ```
 
 #### API Features
@@ -105,6 +112,35 @@ npm start
 
 ## API Documentation
 
+### Artist Directory Endpoint
+
+```
+GET /api/invaluable/artists
+```
+
+Retrieves the list of artists from Invaluable's artist directory.
+
+Example Response:
+```json
+{
+  "success": true,
+  "message": "Artist list retrieved successfully",
+  "data": {
+    "responses": 2,
+    "responseUrls": ["..."],
+    "timestamp": "2024-02-03T23:40:43.635Z",
+    "source": "invaluable",
+    "section": "A"
+  },
+  "files": {
+    "json": {
+      "path": "artists/A.json",
+      "url": "..."
+    }
+  }
+}
+```
+
 ### Search Endpoint
 
 ```
@@ -117,16 +153,20 @@ Example Response:
 ```json
 {
   "success": true,
-  "results": [
-    {
-      "artist": "Artist Name",
-      "apiData": {
-        "responses": [...]
-      },
-      "timestamp": "2024-02-03T09:15:51.894Z"
+  "message": "Search results saved successfully",
+  "searchId": "invaluable-artist-2024-02-03T23-40-43",
+  "files": {
+    "responses": ["..."],
+    "metadata": "..."
+  },
+  "metadata": {
+    "source": "invaluable",
+    "timestamp": "2024-02-03T23:40:43.635Z",
+    "searchParams": {
+      "priceResult": { "min": 250 },
+      "sort": "auctionDateAsc"
     }
-  ],
-  "timestamp": "2024-02-03T09:15:51.894Z"
+  }
 }
 ```
 
@@ -134,17 +174,17 @@ Example Response:
 
 ### Scraper Components
 
-#### API Response Monitor
+#### Artist Directory Scraper
 - Dedicated browser instance
 - Independent state management
-- Handles artist directory crawling
-- Manages subindex processing
-- Saves HTML states and results
+- Handles Algolia API monitoring
+- Manages directory crawling
+- Saves API responses
 
 #### Search Scraper
 - Separate browser instance
 - Cookie-based authentication
-- API response monitoring
+- catResults API monitoring
 - Multi-artist search processing
 - Independent storage operations
 
@@ -152,7 +192,7 @@ Example Response:
 
 1. Server Initialization
    - Create storage connection
-   - Initialize browser instance
+   - Initialize browser instances
    - Set up API endpoints
 
 2. Search Process
@@ -165,7 +205,7 @@ Example Response:
 ## Error Handling
 
 The system includes robust error handling for:
-- Network timeouts (45s default)
+- Network timeouts (90s default)
 - Protection challenges
 - API failures
 - Storage errors
@@ -174,10 +214,9 @@ The system includes robust error handling for:
 
 Key features:
 - Independent error handling per scraper
-- Automatic retries (3 attempts)
-- Debug screenshots
+- Automatic retries
+- Debug logging
 - State preservation
-- Detailed error logging
 - Graceful degradation
 
 ## Deployment
@@ -191,7 +230,7 @@ docker build -t invaluable-scraper .
 
 Run locally:
 ```bash
-docker run -p 8080:8080 \
+docker run -p 3000:3000 \
   -e GOOGLE_CLOUD_PROJECT=your-project-id \
   -e STORAGE_BUCKET=invaluable-html-archive \
   invaluable-scraper
@@ -210,7 +249,7 @@ gcloud builds submit --config cloudbuild.yaml
 ├── src/
 │   ├── server.js                 # Express server setup
 │   ├── routes/
-│   │   ├── artists.js           # Artist list endpoint
+│   │   ├── artists.js           # Artist directory endpoint
 │   │   └── search.js            # Search endpoint
 │   ├── scrapers/
 │   │   └── invaluable/
@@ -218,9 +257,11 @@ gcloud builds submit --config cloudbuild.yaml
 │   │       ├── browser.js       # Browser management
 │   │       ├── auth.js          # Authentication handling
 │   │       ├── utils.js         # Shared utilities
+│   │       ├── artist-list/     # Artist directory scraper
+│   │       │   └── index.js     # Directory implementation
 │   │       └── search/          # Search scraper
 │   │           ├── index.js     # Search implementation
-│   │           ├── api-monitor.js # API response capture
+│   │           └── api-monitor.js # API response capture
 │   └── utils/
 │       └── storage.js           # GCS integration
 ├── Dockerfile                    # Container configuration

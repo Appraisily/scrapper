@@ -52,13 +52,13 @@ class ArtistListScraper {
       // Intercept Algolia API requests
       page.on('request', request => {
         const url = request.url();
-        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
+        if (url.includes('/1/indexes/*/queries')) {
           console.log('🔍 Intercepted Algolia request:', url);
           
           // Add required Algolia headers
           const headers = {
             ...request.headers(),
-            'x-algolia-api-key': 'NO_KEY',
+            'x-algolia-api-key': '6be0576ff61c053d5f9a3225e2a90f76',
             'x-algolia-application-id': '0HJBNDV358',
             'Cookie': cookies.map(c => `${c.name}=${c.value}`).join('; '),
             'content-type': 'application/x-www-form-urlencoded'
@@ -73,7 +73,7 @@ class ArtistListScraper {
       // Intercept responses
       page.on('response', async response => {
         const url = response.url();
-        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
+        if (url.includes('/1/indexes/*/queries')) {
           console.log('📥 Intercepted Algolia response');
           console.log('  • Status:', response.status());
           
@@ -110,7 +110,7 @@ class ArtistListScraper {
 
       // Navigate to artists page
       console.log('🌐 Navigating to artists directory');
-      await page.goto('https://www.invaluable.com/artists/A/', {
+      await page.goto('https://www.invaluable.com/artists/', {
         waitUntil: 'networkidle0',
         timeout: constants.navigationTimeout
       });

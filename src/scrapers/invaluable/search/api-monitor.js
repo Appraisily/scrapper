@@ -1,37 +1,65 @@
 const { constants } = require('../utils');
 
 class ApiMonitor {
-  constructor(storage, artist, timestamp) {
-    if (!storage) throw new Error('Storage instance is required');
-    if (!artist) throw new Error('Artist name is required');
-    if (!timestamp) throw new Error('Timestamp is required');
-    
-    this.storage = storage;
-    this.artist = artist;
-    this.timestamp = timestamp;
+  constructor() {
     this.responses = [];
     this.seenResponses = new Set();
     this.firstResponseCaptured = false;
-    this.savedFiles = [];
   }
 
   setupRequestInterception(page) {
     console.log('Setting up request interception');
     
-    // Intercept Algolia API requests
-    page.on('request', async (request) => {
+    page.on('request', request => {
       try {
         const url = request.url();
-        if (url.includes('algolia.invaluable.com/1/indexes/*/queries')) {
+        if (url.includes('/catResults')) {
           console.log('  • Intercepting API request:', url);
-          const headers = request.headers();
+          
+          // Add required headers for the catResults API
+          const headers = {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'en-US,en;q=0.9',
+            'content-type': 'application/json',
+            'sec-ch-ua': '"Not A(Brand";v="8", "Chromium";v="132", "Google Chrome";v="132"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin'
+          };
+
           request.continue({
-            headers: {
-              ...headers,
-              'x-algolia-api-key': 'NO_KEY',
-              'x-algolia-application-id': '0HJBNDV358',
-              'content-type': 'application/x-www-form-urlencoded'
-            }
+            headers,
+            method: 'POST',
+            postData: JSON.stringify({
+              requests: [{
+                indexName: 'archive_prod',
+                params: {
+                  attributesToRetrieve: [
+                    'watched', 'dateTimeUTCUnix', 'currencyCode', 'dateTimeLocal',
+                    'lotTitle', 'lotNumber', 'lotRef', 'photoPath', 'houseName',
+                    'currencySymbol', 'currencyCode', 'priceResult', 'saleType'
+                  ],
+                  clickAnalytics: true,
+                  facets: [
+                    'hasImage', 'supercategoryName', 'artistName', 'dateTimeUTCUnix',
+                    'houseName', 'countryName', 'currencyCode', 'priceResult'
+                  ],
+                  filters: 'banned:false AND dateTimeUTCUnix<' + Math.floor(Date.now() / 1000) + ' AND onlineOnly:false AND channelIDs:1 AND closed:true',
+                  highlightPostTag: '</ais-highlight-0000000000>',
+                  highlightPreTag: '<ais-highlight-0000000000>',
+                  hitsPerPage: 96,
+                  maxValuesPerFacet: 50,
+                  numericFilters: ['priceResult>=250'],
+                  page: 0,
+                  query: request.url().includes('query=') ? 
+                    decodeURIComponent(request.url().split('query=')[1].split('&')[0]) : '',
+                  ruleContexts: '',
+                  tagFilters: ''
+                }
+              }]
+            })
           });
         } else {
           request.continue();
@@ -47,7 +75,7 @@ class ApiMonitor {
     page.on('response', async (response) => {
       try {
         const url = response.url();
-        if (url.includes('algolia.invaluable.com/1/indexes/*/queries') && response.status() === 200) {
+        if (url.includes('/catResults') && response.status() === 200) {
           console.log('  • Received API response:', url);
           response.text().then(responseData => {
             if (responseData.length < 1000) {
@@ -65,10 +93,22 @@ class ApiMonitor {
             this.seenResponses.add(responseHash);
             console.log('    - New unique response:', (responseData.length / 1024).toFixed(2), 'KB');
             
-            // Save response immediately
-            this.saveResponse(responseData, url).catch(error => {
-              console.error('Error saving response:', error);
-            });
+            if (!this.firstResponseCaptured) {
+              try {
+                // Parse and validate the response
+                const parsedResponse = JSON.parse(responseData);
+                if (parsedResponse && parsedResponse.results) {
+                  this.responses.push(responseData);
+                  console.log('    - Response validated and saved');
+                } else {
+                  console.log('    - Invalid response format');
+                }
+              } catch (parseError) {
+                console.error('    - Error parsing response:', parseError.message);
+              }
+              console.log('    - Saved as first response');
+              this.firstResponseCaptured = true;
+            }
           }).catch(error => {
             console.error('    - Error reading response:', error.message);
           });
@@ -80,69 +120,15 @@ class ApiMonitor {
       }
     });
   }
-
-  async saveResponse(responseData, url) {
-    try {
-      // Create a clean artist ID for filenames
-      const artistId = this.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      
-      // Organize files in a clear structure for Algolia responses:
-      // invaluable/algolia/
-      //   artists/
-      //     {artist-id}/
-      //       {timestamp}/
-      //         responses/
-      //           response-{n}.json
-      //         metadata.json
-      
-      const responseCount = this.savedFiles.length + 1;
-      const filename = `invaluable/algolia/artists/${artistId}/${this.timestamp}/responses/response-${responseCount}.json`;
-      
-      // Save the response with metadata
-      const responseWithMetadata = {
-        artist: this.artist,
-        timestamp: new Date().toISOString(),
-        url,
-        data: JSON.parse(responseData)
-      };
-      
-      await this.storage.saveFile(filename, JSON.stringify(responseWithMetadata, null, 2));
-      this.savedFiles.push(filename);
-      
-      // Save metadata file
-      const metadataFilename = `invaluable/algolia/artists/${artistId}/${this.timestamp}/metadata.json`;
-      const metadata = {
-        artist: this.artist,
-        timestamp: this.timestamp,
-        searchParams: {
-          priceResult: { min: 250 },
-          upcoming: false,
-          sort: 'auctionDateAsc'
-        },
-        type: 'algolia',
-        responseFiles: this.savedFiles,
-        status: 'captured'
-      };
-      
-      await this.storage.saveFile(metadataFilename, JSON.stringify(metadata, null, 2));
-      
-      console.log(`    - Saved response ${responseCount} to ${filename}`);
-      
-    } catch (error) {
-      console.error(`Error saving response for ${this.artist}:`, error);
-      throw error;
-    }
+  
+  hasFirstResponse() {
+    return this.responses.length > 0;
   }
 
   getData() {
     return {
-      savedFiles: this.savedFiles,
-      responseCount: this.savedFiles.length
+      responses: this.responses
     };
-  }
-
-  hasResponses() {
-    return this.savedFiles.length > 0;
   }
 }
 
