@@ -42,8 +42,7 @@ class ApiMonitor {
           headers['Content-Type'] = 'application/json';
           
           console.log('   ✨ Added API-specific headers');
-          request.continue({ headers
-          };
+          request.continue({ headers });
         } else {
           console.log('   ➡️ Continuing regular request');
           request.continue();
