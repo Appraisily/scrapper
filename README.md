@@ -1,207 +1,103 @@
-# Invaluable Art Market Scraper
+# Invaluable Advanced Scraper
 
-A specialized Node.js web scraper for extracting fine art auction data from Invaluable.com. Built with Puppeteer, Express, and advanced anti-detection measures. Focuses on capturing both API responses and HTML states while handling protection challenges.
+A powerful Node.js application for scraping auction data from Invaluable with resumable pagination, browser automation, and cloud storage integration. Built with Puppeteer and Express, this tool handles all the complexities of cookie management, request interception, and protection challenges.
 
-## Overview
+## Key Features
 
-This scraper is designed to capture both HTML content and API responses from Invaluable's art auction listings and artist directories, with specific focus on:
-- API response monitoring and capture
-- Cookie-based authentication
-- Protection/challenge page handling
-- Raw HTML state preservation
+- **Advanced Browser Automation**
+  - Puppeteer with stealth plugins
+  - Cookie and session management
+  - Request/response interception
+  - Protection challenge handling
 
-## Features
+- **Intelligent Pagination**
+  - Auto-resumable data collection
+  - Progress tracking and checkpoints
+  - Metadata-driven page detection
+  - Skips already processed pages
 
-### Core Functionality
+- **Google Cloud Integration**
+  - Automatic storage in GCS buckets
+  - Structured data organization
+  - Batched storage for efficiency
 
-#### Search Scraper
-- Multi-artist search processing
-- Cookie-based authentication
-- API response capture and deduplication
-- Multi-tab processing
-- Parallel artist processing
-- Independent browser instance
+- **RESTful API Interface**
+  - Dynamic parameter support
+  - Search endpoint with comprehensive options
+  - Category-specific scraping endpoints
+  - Direct API data submission endpoint
 
-#### API Response Monitoring
-- Response size validation
-- Duplicate detection
-- Hash-based comparison
-- First response capture
-- Response metadata tracking
+## API Endpoints
 
-### Protection Handling
-- Cloudflare challenge bypass
-- Bot detection avoidance
-- Cookie persistence and validation
-- Session persistence
-- Protection state detection
-
-### Technical Features
-
-#### Browser Automation
-- Independent browser instances per scraper
-- Multi-tab support
-- Cookie management
-- Puppeteer with Stealth Plugin
-- Human behavior simulation:
-  - Random mouse movements
-  - Natural scrolling patterns
-  - Realistic timing delays
-  - Dynamic viewport handling
-
-#### Storage Integration
-- Google Cloud Storage organization:
-  ```
-  Fine Art/
-  ├── api/
-  │   ├── {searchId}-{artistId}-response1.json
-  │   └── {searchId}-{artistId}-response2.json
-  ├── metadata/
-  │   └── {searchId}.json
-  └── html/
-      ├── {searchId}-{artistId}-initial.html
-      └── {searchId}-{artistId}-final.html
-  ```
-
-#### API Features
-- RESTful endpoints
-- Query parameter support
-- Comprehensive response format
-- Error handling and recovery
-- Debug logging
-
-## Prerequisites
-
-- Node.js (v18 or higher)
-- Google Cloud SDK
-- Docker (for containerization)
-- Access to Google Cloud Storage bucket
-
-## Environment Variables
-
-Required variables in `.env`:
+### Main Search
 ```
-GOOGLE_CLOUD_PROJECT=your-project-id
-STORAGE_BUCKET=invaluable-html-archive
+GET /api/search
 ```
+Supports comprehensive search parameters including query, price ranges, and categories.
+
+### Furniture Subcategories
+```
+GET /api/furniture/list
+GET /api/furniture/info/:subcategory
+GET /api/furniture/scrape/:subcategory
+```
+Special endpoints for retrieving furniture subcategories data.
+
+### Scraper Management
+```
+POST /api/scraper/start
+GET /api/scraper/status/:jobId
+```
+Control endpoints for starting and monitoring scraping jobs.
 
 ## Installation
 
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd invaluable-scraper
-```
-
+1. Clone the repository
 2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Configure environment variables:
+   ```
+   GOOGLE_CLOUD_PROJECT=your-project-id
+   STORAGE_BUCKET=invaluable-html-archive
+   ```
+4. Start the server:
+   ```bash
+   npm start
+   ```
+
+## Docker Support
+
+Build and run with Docker:
 ```bash
-npm install
+docker build -t invaluable-scraper .
+docker run -p 8080:8080 -e GOOGLE_CLOUD_PROJECT=your-project-id invaluable-scraper
 ```
-
-3. Start the server:
-```bash
-npm start
-```
-
-## API Documentation
-
-### Search Endpoint
-
-```
-GET /api/invaluable
-```
-
-Searches for artworks by specified artists with configurable parameters.
-
-Example Response:
-```json
-{
-  "success": true,
-  "results": [
-    {
-      "artist": "Artist Name",
-      "apiData": {
-        "responses": [...]
-      },
-      "timestamp": "2024-02-03T09:15:51.894Z"
-    }
-  ],
-  "timestamp": "2024-02-03T09:15:51.894Z"
-}
-```
-
-## Architecture
-
-### Scraper Components
-
-#### API Response Monitor
-- Dedicated browser instance
-- Independent state management
-- Handles artist directory crawling
-- Manages subindex processing
-- Saves HTML states and results
-
-#### Search Scraper
-- Separate browser instance
-- Cookie-based authentication
-- API response monitoring
-- Multi-artist search processing
-- Independent storage operations
-
-### Process Flow
-
-1. Server Initialization
-   - Create storage connection
-   - Initialize browser instance
-   - Set up API endpoints
-
-2. Search Process
-   - Process each artist independently
-   - Create new tab per artist
-   - Monitor API responses
-   - Handle protection
-   - Save results and metadata
-
-## Error Handling
-
-The system includes robust error handling for:
-- Network timeouts (45s default)
-- Protection challenges
-- API failures
-- Storage errors
-- Invalid responses
-- Rate limiting
-
-Key features:
-- Independent error handling per scraper
-- Automatic retries (3 attempts)
-- Debug screenshots
-- State preservation
-- Detailed error logging
-- Graceful degradation
 
 ## Deployment
 
-### Docker
-
-Build the image:
-```bash
-docker build -t invaluable-scraper .
-```
-
-Run locally:
-```bash
-docker run -p 8080:8080 \
-  -e GOOGLE_CLOUD_PROJECT=your-project-id \
-  -e STORAGE_BUCKET=invaluable-html-archive \
-  invaluable-scraper
-```
-
-### Google Cloud Run
-
-Deploy using Cloud Build:
+Deploy to Google Cloud Run:
 ```bash
 gcloud builds submit --config cloudbuild.yaml
+```
+
+## Usage Examples
+
+```bash
+# Basic search
+curl "http://localhost:8080/api/search?query=furniture"
+
+# Search with price range
+curl "http://localhost:8080/api/search?query=furniture&priceResult%5Bmin%5D=1750&priceResult%5Bmax%5D=3250"
+
+# Furniture subcategory with auto-pagination
+curl "http://localhost:8080/api/furniture/scrape/Chairs?fetchAllPages=true"
+
+# Start a background scraping job
+curl -X POST "http://localhost:8080/api/scraper/start" \
+     -H "Content-Type: application/json" \
+     -d '{"category":"furniture", "maxPages":10, "saveToGcs":true}'
 ```
 
 ## Project Structure
@@ -209,23 +105,14 @@ gcloud builds submit --config cloudbuild.yaml
 ```
 ├── src/
 │   ├── server.js                 # Express server setup
-│   ├── routes/
-│   │   ├── artists.js           # Artist list endpoint
-│   │   └── search.js            # Search endpoint
-│   ├── scrapers/
-│   │   └── invaluable/
-│   │       ├── index.js         # Main scraper class
-│   │       ├── browser.js       # Browser management
-│   │       ├── auth.js          # Authentication handling
-│   │       ├── utils.js         # Shared utilities
-│   │       └── search/          # Search scraper
-│   │           ├── index.js     # Search implementation
-│   │           ├── api-monitor.js # API response capture
-│   └── utils/
-│       └── storage.js           # GCS integration
+│   ├── scrapers/invaluable/      # Core scraping logic
+│   │   ├── browser.js           # Browser automation
+│   │   ├── pagination/          # Pagination handling
+│   │   └── utils.js             # Utility functions
+│   ├── routes/                   # API endpoints
+│   └── utils/                    # Storage utilities
 ├── Dockerfile                    # Container configuration
-├── cloudbuild.yaml              # Cloud Build config
-└── package.json                 # Dependencies
+└── cloudbuild.yaml              # Cloud deployment
 ```
 
 ## License

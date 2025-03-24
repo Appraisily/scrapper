@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invaluable API Interceptor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow: auto;
+            max-height: 300px;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 2px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            box-sizing: border-box;
+        }
+        .instructions {
+            background-color: #ffffd9;
+            border: 1px solid #e7e7ca;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .pagination-info {
+            margin-top: 20px;
+            background-color: #e8f4ff;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #cce4ff;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .page-data {
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .remove-button {
+            background-color: #ff5252;
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Invaluable API Interceptor with Pagination</h1>
+    
+    <div class="instructions">
+        <h2>Instructions</h2>
+        <ol>
+            <li>Open <a href="https://www.invaluable.com/search" target="_blank">Invaluable Search</a> in a new tab</li>
+            <li>Open browser developer tools (F12 or right-click > Inspect)</li>
+            <li>Go to Network tab and filter for "catResults"</li>
+            <li>Perform your search on Invaluable</li>
+            <li>When you see the catResults API call, right-click > Copy > Copy Response</li>
+            <li>Paste the API response in the textarea below</li>
+            <li>Click "Process API Data" to format it</li>
+            <li>For pagination: Navigate to additional pages on Invaluable and repeat steps 5-7 to add more pages</li>
+            <li>Click "Combine All Pages" when you've collected all the pages you need</li>
+        </ol>
+    </div>
+
+    <div class="pagination-info">
+        <h2>Pagination Guide</h2>
+        <p>To collect multiple pages of results:</p>
+        <ol>
+            <li>On Invaluable, perform your search and capture the first page data</li>
+            <li>Click "Add Current Page" to store this page</li>
+            <li>Navigate to page 2 on Invaluable by clicking the next page button</li>
+            <li>Intercept the new catResults API call and paste it into the textarea</li>
+            <li>Click "Add Current Page" again</li>
+            <li>Repeat for additional pages</li>
+            <li>When done, click "Combine All Pages" to merge all results</li>
+        </ol>
+    </div>
+
+    <div>
+        <h2>API Response Data</h2>
+        <textarea id="apiResponseData" rows="10" placeholder="Paste the catResults API response here..."></textarea>
+        <button id="processButton">Process Current Page</button>
+        <button id="addPageButton">Add Current Page</button>
+    </div>
+
+    <div>
+        <h2>Current Page Results</h2>
+        <pre id="resultsOutput">Results will appear here after processing...</pre>
+    </div>
+
+    <div>
+        <h2>Collected Pages</h2>
+        <div id="pagesContainer">
+            <p>No pages collected yet. Use "Add Current Page" to store pages.</p>
+        </div>
+        <button id="combineButton" disabled>Combine All Pages</button>
+        <button id="clearPagesButton" disabled>Clear All Pages</button>
+    </div>
+
+    <div>
+        <h2>Combined Results</h2>
+        <pre id="combinedOutput">Combined results will appear here...</pre>
+    </div>
+
+    <div>
+        <h2>Send to API</h2>
+        <input type="text" id="apiEndpoint" placeholder="Your API endpoint" value="https://valuer-dev-856401495068.us-central1.run.app/api/search/direct">
+        <button id="sendButton">Send Current Page to API</button>
+        <button id="sendCombinedButton" disabled>Send Combined Pages to API</button>
+    </div>
+
+    <div>
+        <h2>API Response</h2>
+        <pre id="apiResponseOutput">API response will appear here...</pre>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const apiResponseData = document.getElementById('apiResponseData');
+            const processButton = document.getElementById('processButton');
+            const addPageButton = document.getElementById('addPageButton');
+            const resultsOutput = document.getElementById('resultsOutput');
+            const pagesContainer = document.getElementById('pagesContainer');
+            const combineButton = document.getElementById('combineButton');
+            const clearPagesButton = document.getElementById('clearPagesButton');
+            const combinedOutput = document.getElementById('combinedOutput');
+            const apiEndpoint = document.getElementById('apiEndpoint');
+            const sendButton = document.getElementById('sendButton');
+            const sendCombinedButton = document.getElementById('sendCombinedButton');
+            const apiResponseOutput = document.getElementById('apiResponseOutput');
+
+            // Store collected pages
+            let collectedPages = [];
+            let lastProcessedData = null;
+
+            // Process API data
+            processButton.addEventListener('click', function() {
+                try {
+                    const data = JSON.parse(apiResponseData.value);
+                    lastProcessedData = data;
+                    
+                    // Display page info
+                    const pageInfo = extractPageInfo(data);
+                    
+                    // Format and display the results
+                    let formattedResults = formatSearchResults(data);
+                    resultsOutput.textContent = JSON.stringify({
+                        pageInfo,
+                        formattedResults
+                    }, null, 2);
+                } catch (error) {
+                    resultsOutput.textContent = `Error processing data: ${error.message}`;
+                }
+            });
+
+            // Add the current page to our collection
+            addPageButton.addEventListener('click', function() {
+                try {
+                    // If we haven't processed any data yet, process it now
+                    if (!lastProcessedData) {
+                        const data = JSON.parse(apiResponseData.value);
+                        lastProcessedData = data;
+                    }
+                    
+                    // Add to our collection
+                    collectedPages.push(lastProcessedData);
+                    
+                    // Update UI
+                    updatePagesUI();
+                    
+                    // Enable buttons
+                    combineButton.disabled = false;
+                    clearPagesButton.disabled = false;
+                    sendCombinedButton.disabled = false;
+                    
+                    // Clear last processed data
+                    lastProcessedData = null;
+                    
+                    // Clear the textarea to make it ready for the next page
+                    apiResponseData.value = '';
+                    apiResponseData.placeholder = 'Now paste the next page data here...';
+                    
+                } catch (error) {
+                    alert(`Error adding page: ${error.message}`);
+                }
+            });
+
+            // Combine all collected pages
+            combineButton.addEventListener('click', function() {
+                if (collectedPages.length === 0) {
+                    alert('No pages to combine.');
+                    return;
+                }
+                
+                try {
+                    // Use the first page as the base
+                    let combinedData = JSON.parse(JSON.stringify(collectedPages[0]));
+                    
+                    // Add hits from other pages
+                    for (let i = 1; i < collectedPages.length; i++) {
+                        const page = collectedPages[i];
+                        if (page && page.results && page.results[0] && page.results[0].hits) {
+                            combinedData.results[0].hits = [
+                                ...combinedData.results[0].hits,
+                                ...page.results[0].hits
+                            ];
+                        }
+                    }
+                    
+                    // Update metadata
+                    if (combinedData.results && combinedData.results[0]) {
+                        const totalItems = combinedData.results[0].hits.length;
+                        if (combinedData.results[0].meta) {
+                            combinedData.results[0].meta.totalHits = totalItems;
+                        }
+                    }
+                    
+                    // Display the combined results
+                    const pageInfo = extractPageInfo(combinedData);
+                    const formattedResults = formatSearchResults(combinedData);
+                    
+                    combinedOutput.textContent = JSON.stringify({
+                        pageInfo: {
+                            ...pageInfo,
+                            originalPages: collectedPages.length,
+                            totalCombinedItems: formattedResults.lots.length
+                        },
+                        formattedResults
+                    }, null, 2);
+                    
+                    // Store the combined data
+                    lastProcessedData = combinedData;
+                    
+                } catch (error) {
+                    combinedOutput.textContent = `Error combining pages: ${error.message}`;
+                }
+            });
+
+            // Clear all pages
+            clearPagesButton.addEventListener('click', function() {
+                if (confirm('Are you sure you want to clear all collected pages?')) {
+                    collectedPages = [];
+                    updatePagesUI();
+                    combinedOutput.textContent = 'Combined results will appear here...';
+                    combineButton.disabled = true;
+                    clearPagesButton.disabled = true;
+                    sendCombinedButton.disabled = true;
+                }
+            });
+
+            // Send current page data to API
+            sendButton.addEventListener('click', async function() {
+                try {
+                    // If we haven't processed any data yet, process it now
+                    if (!lastProcessedData) {
+                        lastProcessedData = JSON.parse(apiResponseData.value);
+                    }
+                    
+                    const data = lastProcessedData;
+                    const endpoint = apiEndpoint.value;
+                    
+                    apiResponseOutput.textContent = 'Sending data to API...';
+                    
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            apiData: data,
+                            searchParams: extractSearchParams()
+                        })
+                    });
+                    
+                    const responseData = await response.json();
+                    apiResponseOutput.textContent = JSON.stringify(responseData, null, 2);
+                } catch (error) {
+                    apiResponseOutput.textContent = `Error sending data: ${error.message}`;
+                }
+            });
+
+            // Send combined data to API
+            sendCombinedButton.addEventListener('click', async function() {
+                try {
+                    if (collectedPages.length === 0) {
+                        alert('No pages to send.');
+                        return;
+                    }
+                    
+                    const endpoint = apiEndpoint.value.includes('/combine-pages') ?
+                        apiEndpoint.value :
+                        apiEndpoint.value.replace(/\/direct$/, '/combine-pages');
+                    
+                    apiResponseOutput.textContent = 'Sending combined data to API...';
+                    
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            pages: collectedPages,
+                            searchParams: extractSearchParams()
+                        })
+                    });
+                    
+                    const responseData = await response.json();
+                    apiResponseOutput.textContent = JSON.stringify(responseData, null, 2);
+                } catch (error) {
+                    apiResponseOutput.textContent = `Error sending combined data: ${error.message}`;
+                }
+            });
+
+            // Helper function to update the pages UI
+            function updatePagesUI() {
+                if (collectedPages.length === 0) {
+                    pagesContainer.innerHTML = '<p>No pages collected yet. Use "Add Current Page" to store pages.</p>';
+                    return;
+                }
+                
+                // Create a table to display page information
+                let html = `
+                    <table>
+                        <tr>
+                            <th>#</th>
+                            <th>Page</th>
+                            <th>Items</th>
+                            <th>Actions</th>
+                        </tr>
+                `;
+                
+                collectedPages.forEach((page, index) => {
+                    const pageNumber = extractPageNumber(page);
+                    const itemCount = page?.results?.[0]?.hits?.length || 0;
+                    
+                    html += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>Page ${pageNumber}</td>
+                            <td>${itemCount} items</td>
+                            <td>
+                                <button class="remove-button" data-index="${index}">Remove</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += `</table>
+                    <p>Total collected pages: ${collectedPages.length}</p>
+                    <p>Total items: ${collectedPages.reduce((sum, page) => sum + (page?.results?.[0]?.hits?.length || 0), 0)}</p>
+                `;
+                
+                pagesContainer.innerHTML = html;
+                
+                // Add event listeners to remove buttons
+                document.querySelectorAll('.remove-button').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const index = parseInt(this.dataset.index);
+                        if (confirm(`Remove page ${index + 1}?`)) {
+                            collectedPages.splice(index, 1);
+                            updatePagesUI();
+                            
+                            // Disable buttons if no pages left
+                            if (collectedPages.length === 0) {
+                                combineButton.disabled = true;
+                                clearPagesButton.disabled = true;
+                                sendCombinedButton.disabled = true;
+                            }
+                        }
+                    });
+                });
+            }
+
+            // Helper function to extract page number from API response
+            function extractPageNumber(data) {
+                try {
+                    // Try to get page number from request parameters
+                    const params = data?.requestParameters || {};
+                    if (params.page) {
+                        return parseInt(params.page);
+                    }
+                    
+                    // Try to get from meta data
+                    const meta = data?.results?.[0]?.meta;
+                    if (meta && meta.start && meta.size) {
+                        return Math.floor(meta.start / meta.size) + 1;
+                    }
+                    
+                    return 'Unknown';
+                } catch (error) {
+                    return 'Unknown';
+                }
+            }
+
+            // Helper function to extract page info
+            function extractPageInfo(data) {
+                try {
+                    const meta = data?.results?.[0]?.meta || {};
+                    const hits = data?.results?.[0]?.hits || [];
+                    
+                    return {
+                        pageNumber: meta.start && meta.size ? Math.floor(meta.start / meta.size) + 1 : 'Unknown',
+                        itemsOnPage: hits.length,
+                        totalHits: meta.totalHits || 'Unknown',
+                        fromItem: meta.start || 0,
+                        toItem: (meta.start || 0) + hits.length,
+                        requestTime: new Date().toISOString()
+                    };
+                } catch (error) {
+                    return { error: error.message };
+                }
+            }
+
+            // Helper function to extract search parameters from URL
+            function extractSearchParams() {
+                const params = {};
+                const url = new URL(window.location.href);
+                for (const [key, value] of url.searchParams.entries()) {
+                    params[key] = value;
+                }
+                return params;
+            }
+
+            // Function to format search results (same as in server code)
+            function formatSearchResults(catResults) {
+                if (!catResults?.results?.[0]?.hits) {
+                    return { lots: [], totalResults: 0 };
+                }
+
+                const hits = catResults.results[0].hits;
+                const lots = hits.map(hit => ({
+                    title: hit.lotTitle,
+                    date: hit.dateTimeLocal,
+                    auctionHouse: hit.houseName,
+                    price: {
+                        amount: hit.priceResult,
+                        currency: hit.currencyCode,
+                        symbol: hit.currencySymbol
+                    },
+                    image: hit.photoPath,
+                    lotNumber: hit.lotNumber,
+                    saleType: hit.saleType
+                }));
+
+                return {
+                    lots,
+                    totalResults: lots.length
+                };
+            }
+
+            // Check if we were sent here from Invaluable with data in URL hash
+            window.addEventListener('load', function() {
+                if (window.location.hash) {
+                    try {
+                        const hashData = decodeURIComponent(window.location.hash.substring(1));
+                        apiResponseData.value = hashData;
+                        processButton.click();
+                    } catch (error) {
+                        console.error('Error processing hash data:', error);
+                    }
+                }
+            });
+
+            // Enhanced interceptor code with pagination support
+            const interceptorCode = `
+// Invaluable API Interceptor with Pagination Support
+// Run this in browser console on Invaluable site
+(function() {
+    // Keep track of intercepted pages
+    window.interceptedPages = window.interceptedPages || {};
+    
+    // Check if already running
+    if (window.invaluableInterceptorActive) {
+        console.log('🔍 Interceptor already active');
+        return;
+    }
+    
+    window.invaluableInterceptorActive = true;
+    
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await originalFetch(...args);
+        
+        // Clone the response so we can read it multiple times
+        const clone = response.clone();
+        
+        // Check if it's a catResults API call
+        if (response.url.includes('catResults')) {
+            try {
+                console.log('Intercepted catResults API call');
+                const data = await clone.json();
+                
+                // Try to determine current page
+                let pageNum = 'unknown';
+                try {
+                    const url = new URL(window.location.href);
+                    pageNum = url.searchParams.get('page') || '1';
+                } catch (e) {}
+                
+                // Store this page
+                window.interceptedPages[pageNum] = data;
+                
+                console.log(\`📄 Page \${pageNum} data intercepted\`);
+                console.log('Pages collected:', Object.keys(window.interceptedPages));
+                
+                // Log the data in console for easy copying
+                console.log(\`API Data (Page \${pageNum}):\`, data);
+                
+                // Create a popup with the data
+                const dataStr = JSON.stringify(data);
+                const encodedData = encodeURIComponent(dataStr);
+                
+                // Provide page info
+                const pageInfo = data?.results?.[0]?.meta || {};
+                const itemCount = data?.results?.[0]?.hits?.length || 0;
+                
+                // Prompt user with the full URL to your interceptor
+                if (confirm(\`📄 Page \${pageNum} data intercepted with \${itemCount} items! Open in interceptor page?\`)) {
+                    // Replace with your actual interceptor URL - could be localhost or the deployed version
+                    const interceptorUrl = 'https://YOUR-ACTUAL-INTERCEPTOR-URL.html#' + encodedData;
+                    window.open(interceptorUrl, '_blank');
+                }
+            } catch (e) {
+                console.error('Error intercepting API data:', e);
+            }
+        }
+        
+        return response;
+    };
+    
+    // Add helper to get all collected pages
+    window.getAllInterceptedPages = function() {
+        return Object.values(window.interceptedPages);
+    };
+    
+    // Add helper to export all pages as a single JSON string
+    window.exportAllPages = function() {
+        const pages = Object.values(window.interceptedPages);
+        if (pages.length === 0) {
+            return "No pages collected yet";
+        }
+        
+        // Combine the pages
+        let combined = JSON.parse(JSON.stringify(pages[0]));
+        for (let i = 1; i < pages.length; i++) {
+            if (pages[i]?.results?.[0]?.hits) {
+                combined.results[0].hits = [
+                    ...combined.results[0].hits,
+                    ...pages[i].results[0].hits
+                ];
+            }
+        }
+        
+        // Update metadata
+        if (combined.results?.[0]?.meta) {
+            combined.results[0].meta.totalHits = combined.results[0].hits.length;
+        }
+        
+        return JSON.stringify(combined);
+    };
+    
+    console.log('🔍 Invaluable API Interceptor with pagination support activated!');
+    console.log('To get all pages collected, use window.getAllInterceptedPages()');
+    console.log('To export all pages as a combined JSON string, use window.exportAllPages()');
+})();
+`;
+
+            // Add the interceptor code to the page
+            const interceptorSection = document.createElement('div');
+            interceptorSection.innerHTML = `
+                <h2>Browser Console Code</h2>
+                <p>Copy and paste this code into your browser console while on Invaluable to automatically intercept API calls:</p>
+                <pre id="interceptorCode">${interceptorCode}</pre>
+                <button id="copyInterceptorButton">Copy Code</button>
+            `;
+            document.body.appendChild(interceptorSection);
+
+            // Add copy functionality
+            document.getElementById('copyInterceptorButton').addEventListener('click', function() {
+                const interceptorCodeElement = document.getElementById('interceptorCode');
+                const range = document.createRange();
+                range.selectNode(interceptorCodeElement);
+                window.getSelection().removeAllRanges();
+                window.getSelection().addRange(range);
+                document.execCommand('copy');
+                window.getSelection().removeAllRanges();
+                this.textContent = 'Copied!';
+                setTimeout(() => {
+                    this.textContent = 'Copy Code';
+                }, 2000);
+            });
+        });
+    </script>
+</body>
+</html> 

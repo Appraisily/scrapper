@@ -1,34 +1,25 @@
 const express = require('express');
 const cors = require('cors');
-const artistsRouter = require('./routes/artists');
+const path = require('path');
 const searchRouter = require('./routes/search');
+const scraperRouter = require('./routes/scraper');
+const furnitureSubcategoriesRouter = require('./routes/furniture-subcategories');
+const generalScraperRouter = require('./routes/general-scraper');
 const InvaluableScraper = require('./scrapers/invaluable');
-const storage = require('./utils/storage');
 
 const port = process.env.PORT || 8080;
-
-const requiredEnvVars = ['GOOGLE_CLOUD_PROJECT'];
-
-const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
-if (missingEnvVars.length > 0) {
-  console.error('Missing required environment variables:', missingEnvVars.join(', '));
-  process.exit(1);
-}
-
 const app = express();
 
-let invaluableScraper = null;
-let initializingInvaluable = false;
+const invaluableScraper = new InvaluableScraper();
+let isInitializing = false;
 
 // Graceful shutdown handler
 async function shutdown() {
   console.log('Shutting down gracefully...');
-  if (invaluableScraper) {
-    try {
-      await invaluableScraper.close();
-    } catch (error) {
-      console.error('Error closing scraper:', error);
-    }
+  try {
+    await invaluableScraper.close();
+  } catch (error) {
+    console.error('Error closing scraper:', error);
   }
   process.exit(0);
 }
@@ -39,27 +30,32 @@ process.on('SIGINT', shutdown);
 
 // Add health check endpoint
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'Invaluable Scraper API is running' });
+  res.json({ status: 'ok', message: 'Invaluable Search API is running' });
 });
 
+// Serve client interceptor tool
+app.use(express.static(path.join(__dirname, '../public')));
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
-app.locals.storage = storage;
-
+// Lazy initialization of the scraper
 async function initializeScraper() {
-  if (initializingInvaluable) {
-    while (initializingInvaluable) {
+  if (isInitializing) {
+    while (isInitializing) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     return;
   }
 
-  initializingInvaluable = true;
-  console.log('Starting Invaluable scraper initialization...');
+  if (invaluableScraper.initialized) {
+    return;
+  }
+
+  isInitializing = true;
+  console.log('Starting Invaluable scraper initialization on demand...');
 
   try {
-    invaluableScraper = new InvaluableScraper(storage);
     await invaluableScraper.initialize();
     app.locals.invaluableScraper = invaluableScraper;
     console.log('Invaluable scraper initialized successfully');
@@ -67,21 +63,35 @@ async function initializeScraper() {
     console.error('Error initializing Invaluable scraper:', error);
     throw error;
   } finally {
-    initializingInvaluable = false;
+    isInitializing = false;
   }
 }
 
-// Initialize scraper and set up routes
-async function startServer() {
+// Set up middleware to initialize scraper only when needed
+app.use(['/api/search', '/api/furniture', '/api/invaluable'], async (req, res, next) => {
   try {
     await initializeScraper();
-    
-    app.use('/api/invaluable/artists', artistsRouter);
-    app.use('/api/invaluable', searchRouter);
+    next();
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to initialize scraper',
+      message: error.message
+    });
+  }
+});
+
+// Initialize routes without starting the scraper automatically
+async function startServer() {
+  try {
+    // Set up routes
+    app.use('/api/search', searchRouter);
+    app.use('/api/scraper', scraperRouter);
+    app.use('/api/furniture', furnitureSubcategoriesRouter);
+    app.use('/api/invaluable', generalScraperRouter);
     
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`Server is now listening on port ${port}`);
-      console.log('Google Cloud Project:', process.env.GOOGLE_CLOUD_PROJECT);
     });
 
     server.on('error', (error) => {

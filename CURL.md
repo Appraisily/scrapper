@@ -1,34 +1,63 @@
+# Invaluable Search API Documentation
+
+## Endpoint
+
 ```bash
-# Worthpoint Browser Scraping
-curl "https://scrapper-856401495068.us-central1.run.app/api/art/browser"
-curl "https://scrapper-856401495068.us-central1.run.app/api/art/browser?max=50&sort=SaleDate&rMin=500"
-curl "https://scrapper-856401495068.us-central1.run.app/api/art/browser?saleDate=LAST_YEAR"
+GET /api/search
+```
 
-# Worthpoint API Search
-curl "https://scrapper-856401495068.us-central1.run.app/api/art/api"
-curl "https://scrapper-856401495068.us-central1.run.app/api/art/api?max=50&sort=PriceHighToLow&rMin=1000"
-curl "https://scrapper-856401495068.us-central1.run.app/api/art/api?categories=fine-art,paintings"
+## Query Parameters
 
-# Christie's Auction Search
-curl "https://scrapper-856401495068.us-central1.run.app/api/christies"
-curl "https://scrapper-856401495068.us-central1.run.app/api/christies?month=1&year=2024"
-curl "https://scrapper-856401495068.us-central1.run.app/api/christies?page=2&pageSize=30"
+Any valid Invaluable search parameters can be used. Common parameters include:
 
-# Christie's Lot Details
-curl "https://scrapper-856401495068.us-central1.run.app/api/christies/lot/12345"
-curl "https://scrapper-856401495068.us-central1.run.app/api/christies/lot/67890"
+- `query`: Search query
+- `keyword`: Additional keyword filter
+- `supercategoryName`: Category name (e.g., "Furniture", "Fine Art")
+- `priceResult[min]`: Minimum price
+- `priceResult[max]`: Maximum price
+- `houseName`: Auction house name
+- `upcoming`: Filter for upcoming auctions (true/false)
 
-# Invaluable Search
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable"
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable?currency=EUR&minPrice=1000"
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable?upcoming=true"
-curl "https://scrapper-856401495068.us-central1.run.app/api/invaluable?query=impressionist&keyword=painting"
+## Examples
 
-# Test All Endpoints Script
-#!/bin/bash
-curl -s "https://scrapper-856401495068.us-central1.run.app/api/art/browser" | jq .
-curl -s "https://scrapper-856401495068.us-central1.run.app/api/art/api" | jq .
-curl -s "https://scrapper-856401495068.us-central1.run.app/api/christies?month=1&year=2024" | jq .
-curl -s "https://scrapper-856401495068.us-central1.run.app/api/christies/lot/12345" | jq .
-curl -s "https://scrapper-856401495068.us-central1.run.app/api/invaluable?currency=USD&minPrice=500" | jq .
+```bash
+# Basic search
+curl "http://localhost:8080/api/search?query=furniture"
+
+# Search with price range
+curl "http://localhost:8080/api/search?query=furniture&priceResult[min]=250&priceResult[max]=500"
+
+# Search with multiple parameters
+curl "http://localhost:8080/api/search?supercategoryName=Furniture&priceResult[min]=500&priceResult[max]=5000"
+
+# Search specific auction house
+curl "http://localhost:8080/api/search?houseName=DOYLE%20Auctioneers%20%26%20Appraisers&query=antique"
+```
+
+## Response Format
+
+```json
+{
+  "success": true,
+  "timestamp": "2024-02-14T12:34:56.789Z",
+  "parameters": {
+    "query": "furniture",
+    "priceResult[min]": "250",
+    "priceResult[max]": "500"
+  },
+  "data": [
+    {
+      // Captured JSON responses from catResults endpoint
+    }
+  ]
+}
+```
+
+## Error Response
+
+```json
+{
+  "error": "Failed to fetch search results",
+  "message": "Error details"
+}
 ```

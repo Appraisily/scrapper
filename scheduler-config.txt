@@ -1,0 +1,24 @@
+# Cloud Scheduler Configuration
+
+Service Name: ScrapperFurniture
+Region: us-central1 (Iowa)
+Schedule: Every hour (0 * * * *)
+Target: Cloud Run
+URL: https://scrapper-856401495068.us-central1.run.app/api/invaluable/furniture
+
+Command to create the scheduler:
+
+gcloud scheduler jobs create http scrapper-furniture \
+  --schedule="0 * * * *" \
+  --uri="https://scrapper-856401495068.us-central1.run.app/api/invaluable/furniture" \
+  --http-method=GET \
+  --attempt-deadline=30m \
+  --time-zone="UTC" \
+  --location=us-central1 \
+  --project=civil-forge-403609
+
+Notes:
+- Schedule is set to run at minute 0 of every hour (0 * * * *)
+- Using UTC timezone to avoid DST issues
+- 30 minute deadline for each attempt
+- HTTP GET request to the furniture endpoint
