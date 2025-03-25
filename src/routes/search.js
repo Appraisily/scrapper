@@ -388,12 +388,25 @@ router.get('/', async (req, res) => {
         if (saveImages && standardizedResponse.data.lots.length > 0) {
           console.log(`Also saving ${standardizedResponse.data.lots.length} images...`);
           
+          // Try to get the browser instance from invaluableScraper if available
+          let existingBrowser = null;
+          if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
+            // Get the underlying browser instance if it exists
+            if (req.app.locals.invaluableScraper.browser.getBrowser) {
+              existingBrowser = await req.app.locals.invaluableScraper.browser.getBrowser();
+              console.log('Using existing browser instance from scraper');
+            } else {
+              console.log('Browser manager exists but getBrowser method not found');
+            }
+          }
+          
           // Save all images and update response with image paths
           try {
             standardizedResponse = await storage.saveAllImages(
               standardizedResponse, 
               category,
-              searchParams.subcategory || null
+              searchParams.subcategory || null,
+              existingBrowser
             );
             console.log('Images saved successfully');
           } catch (imageError) {
@@ -480,12 +493,25 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
         if (saveImages && standardizedResponse.data.lots.length > 0) {
           console.log(`Also saving ${standardizedResponse.data.lots.length} images...`);
           
+          // Try to get the browser instance from invaluableScraper if available
+          let existingBrowser = null;
+          if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
+            // Get the underlying browser instance if it exists
+            if (req.app.locals.invaluableScraper.browser.getBrowser) {
+              existingBrowser = await req.app.locals.invaluableScraper.browser.getBrowser();
+              console.log('Using existing browser instance from scraper');
+            } else {
+              console.log('Browser manager exists but getBrowser method not found');
+            }
+          }
+          
           // Save all images and update response with image paths
           try {
             standardizedResponse = await storage.saveAllImages(
               standardizedResponse, 
               category,
-              searchParams.subcategory || null
+              searchParams.subcategory || null,
+              existingBrowser
             );
             console.log('Images saved successfully');
           } catch (imageError) {
@@ -608,11 +634,24 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
           if (saveImages && pageStandardizedResponse.data.lots.length > 0) {
             console.log(`Also saving ${pageStandardizedResponse.data.lots.length} images for page ${pageNumber}...`);
             
+            // Try to get the browser instance from invaluableScraper if available
+            let existingBrowser = null;
+            if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
+              // Get the underlying browser instance if it exists
+              if (req.app.locals.invaluableScraper.browser.getBrowser) {
+                existingBrowser = await req.app.locals.invaluableScraper.browser.getBrowser();
+                console.log('Using existing browser instance from scraper');
+              } else {
+                console.log('Browser manager exists but getBrowser method not found');
+              }
+            }
+            
             try {
               const updatedResponse = await storage.saveAllImages(
                 pageStandardizedResponse,
                 category,
-                searchParams.subcategory || null
+                searchParams.subcategory || null,
+                existingBrowser
               );
               
               // Use the updated response with image paths
@@ -633,11 +672,24 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
         if (saveImages && standardizedResponse.data.lots.length > 0) {
           console.log(`Also saving ${standardizedResponse.data.lots.length} images for combined results...`);
           
+          // Try to get the browser instance from invaluableScraper if available
+          let existingBrowser = null;
+          if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
+            // Get the underlying browser instance if it exists
+            if (req.app.locals.invaluableScraper.browser.getBrowser) {
+              existingBrowser = await req.app.locals.invaluableScraper.browser.getBrowser();
+              console.log('Using existing browser instance from scraper');
+            } else {
+              console.log('Browser manager exists but getBrowser method not found');
+            }
+          }
+          
           try {
             standardizedResponse = await storage.saveAllImages(
               standardizedResponse,
               category,
-              searchParams.subcategory || null
+              searchParams.subcategory || null,
+              existingBrowser
             );
             console.log('Combined results images saved successfully');
           } catch (imageError) {

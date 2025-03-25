@@ -5,6 +5,11 @@
 const { Storage } = require('@google-cloud/storage');
 const path = require('path');
 const axios = require('axios');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+// Configure puppeteer with stealth plugin to avoid detection
+puppeteer.use(StealthPlugin());
 
 class SearchStorageService {
   constructor(options = {}) {
@@ -31,7 +36,7 @@ class SearchStorageService {
     
     this.bucket = this.storage.bucket(this.bucketName);
     
-    // HTTP client for image downloading
+    // HTTP client for image downloading (fallback only)
     this.httpClient = axios.create({
       timeout: 10000, // 10 seconds timeout
       headers: {
@@ -40,6 +45,12 @@ class SearchStorageService {
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
       }
     });
+    
+    // Browser instance (will be initialized on demand)
+    this.browser = null;
+    
+    // Track if we need to close the browser when done
+    this.shouldCloseBrowser = false;
   }
   
   /**
@@ -240,14 +251,62 @@ class SearchStorageService {
   }
 
   /**
-   * Download an image from URL and save to GCS
+   * Initialize browser if it doesn't exist yet
+   * @param {Object} externalBrowser - Optional external browser instance to use
+   * @returns {Promise<Object>} - Puppeteer browser instance
+   */
+  async initBrowser(externalBrowser = null) {
+    if (externalBrowser) {
+      console.log('Using provided external browser instance');
+      this.browser = externalBrowser;
+      this.shouldCloseBrowser = false;
+      return this.browser;
+    }
+    
+    if (this.browser) {
+      return this.browser;
+    }
+    
+    console.log('Initializing browser for image downloads...');
+    this.browser = await puppeteer.launch({
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1280,720'
+      ]
+    });
+    
+    this.shouldCloseBrowser = true;
+    console.log('Browser initialized successfully');
+    return this.browser;
+  }
+  
+  /**
+   * Close browser if we created it
+   */
+  async closeBrowser() {
+    if (this.browser && this.shouldCloseBrowser) {
+      console.log('Closing browser...');
+      await this.browser.close();
+      this.browser = null;
+      console.log('Browser closed');
+    }
+  }
+  
+  /**
+   * Download an image using browser and save to GCS
    * @param {string} imageUrl - URL of the image to download
    * @param {string} category - Category/search term
    * @param {string} lotNumber - Lot number of the item
    * @param {string} subcategory - Optional subcategory
+   * @param {Object} externalBrowser - Optional external browser instance to use
    * @returns {Promise<string>} - GCS file path where image was saved
    */
-  async saveImage(imageUrl, category, lotNumber, subcategory = null) {
+  async saveImage(imageUrl, category, lotNumber, subcategory = null, externalBrowser = null) {
     if (!imageUrl || !category || !lotNumber) {
       throw new Error('Image URL, category, and lot number are required for storing images');
     }
@@ -276,8 +335,153 @@ class SearchStorageService {
         return `gs://${this.bucketName}/${filePath}`;
       }
       
+      // Initialize browser if needed
+      await this.initBrowser(externalBrowser);
+      
+      // Create a new page
+      console.log(`Downloading image from ${url} using browser`);
+      const page = await this.browser.newPage();
+      
+      try {
+        // Set viewport
+        await page.setViewport({ width: 1280, height: 720 });
+        
+        // Set extra headers
+        await page.setExtraHTTPHeaders({
+          'Referer': 'https://www.invaluable.com/',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+        });
+        
+        // Enable request interception to capture the image response
+        await page.setRequestInterception(true);
+        
+        let imageBuffer = null;
+        let contentType = 'image/jpeg';
+        
+        // Listen for responses to capture the image data
+        page.on('request', request => {
+          request.continue();
+        });
+        
+        page.on('response', async response => {
+          if (response.url() === url && response.status() === 200) {
+            try {
+              imageBuffer = await response.buffer();
+              contentType = response.headers()['content-type'] || 'image/jpeg';
+              console.log(`Successfully captured image response: ${response.status()}, content-type: ${contentType}`);
+            } catch (err) {
+              console.error(`Error capturing response buffer: ${err.message}`);
+            }
+          }
+        });
+        
+        // Navigate to the image URL
+        const response = await page.goto(url, {
+          waitUntil: 'networkidle0',
+          timeout: 15000
+        });
+        
+        // If we couldn't capture the buffer from the response event, try to get it directly
+        if (!imageBuffer && response && response.status() === 200) {
+          imageBuffer = await response.buffer();
+          contentType = response.headers()['content-type'] || 'image/jpeg';
+          console.log(`Captured image buffer directly from response`);
+        }
+        
+        // Check if we have image data
+        if (!imageBuffer) {
+          console.log(`Alternative method: trying to get image from page content...`);
+          
+          // Try to get the image as base64 from the page
+          const base64Data = await page.evaluate(() => {
+            const img = document.querySelector('img');
+            if (img && img.complete) {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0);
+              return canvas.toDataURL('image/jpeg').replace(/^data:image\/jpeg;base64,/, '');
+            }
+            return null;
+          });
+          
+          if (base64Data) {
+            imageBuffer = Buffer.from(base64Data, 'base64');
+            contentType = 'image/jpeg';
+            console.log(`Successfully extracted image data from page`);
+          }
+        }
+        
+        // If we still don't have an image, throw an error
+        if (!imageBuffer) {
+          throw new Error(`Failed to download image: Could not capture image data`);
+        }
+        
+        // Save image to GCS
+        await file.save(imageBuffer, {
+          contentType,
+          metadata: {
+            cacheControl: 'public, max-age=31536000', // Cache for 1 year
+            source: url
+          },
+        });
+        
+        console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
+        return `gs://${this.bucketName}/${filePath}`;
+      } finally {
+        // Close the page
+        await page.close();
+      }
+    } catch (error) {
+      console.error(`Error saving image: ${error.message}`);
+      
+      // Try fallback to direct HTTP request if browser method fails
+      try {
+        console.log(`Trying fallback method with direct HTTP request...`);
+        return await this.saveImageFallback(imageUrl, category, lotNumber, subcategory);
+      } catch (fallbackError) {
+        console.error(`Fallback method also failed: ${fallbackError.message}`);
+        return null;
+      }
+    }
+  }
+  
+  /**
+   * Fallback method to download image using axios (only used if browser method fails)
+   * @param {string} imageUrl - URL of the image to download
+   * @param {string} category - Category/search term
+   * @param {string} lotNumber - Lot number of the item
+   * @param {string} subcategory - Optional subcategory
+   * @returns {Promise<string>} - GCS file path where image was saved
+   */
+  async saveImageFallback(imageUrl, category, lotNumber, subcategory = null) {
+    try {
+      // Fix image URL if needed (ensure complete URL)
+      let url = imageUrl;
+      if (!url.startsWith('http')) {
+        // If it starts with a house name without the proper prefix
+        if (!url.startsWith('image.invaluable.com')) {
+          url = `https://image.invaluable.com/housePhotos/${url}`;
+        } else {
+          url = `https://${url}`;
+        }
+      }
+      
+      // Generate GCS file path for the image
+      const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
+      
+      // Check if image already exists in storage
+      const file = this.bucket.file(filePath);
+      const [exists] = await file.exists();
+      
+      if (exists) {
+        console.log(`Image already exists at gs://${this.bucketName}/${filePath}`);
+        return `gs://${this.bucketName}/${filePath}`;
+      }
+      
       // Download image with proper headers
-      console.log(`Downloading image from ${url}`);
+      console.log(`Downloading image from ${url} using direct HTTP request`);
       const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
       
       // Get content type from response
@@ -295,7 +499,7 @@ class SearchStorageService {
       console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
       return `gs://${this.bucketName}/${filePath}`;
     } catch (error) {
-      console.error(`Error saving image: ${error.message}`);
+      console.error(`Error in fallback image download: ${error.message}`);
       return null;
     }
   }
@@ -305,9 +509,10 @@ class SearchStorageService {
    * @param {Object} searchResults - Formatted search results
    * @param {string} category - Category/search term
    * @param {string} subcategory - Optional subcategory
+   * @param {Object} externalBrowser - Optional browser instance to reuse
    * @returns {Promise<Object>} - Results with added image storage paths
    */
-  async saveAllImages(searchResults, category, subcategory = null) {
+  async saveAllImages(searchResults, category, subcategory = null, externalBrowser = null) {
     if (!searchResults || !searchResults.data || !searchResults.data.lots) {
       console.warn('No valid search results provided for image saving');
       return searchResults;
@@ -318,53 +523,66 @@ class SearchStorageService {
     // Create a copy of the results to avoid modifying the original
     const resultsCopy = JSON.parse(JSON.stringify(searchResults));
     
-    // Process each lot in parallel with a concurrency limit
-    const concurrencyLimit = 5; // Limit concurrent downloads to avoid rate limiting
-    const lots = resultsCopy.data.lots;
-    
-    // Process in batches
-    for (let i = 0; i < lots.length; i += concurrencyLimit) {
-      const batch = lots.slice(i, i + concurrencyLimit);
+    try {
+      // Initialize shared browser instance if needed
+      await this.initBrowser(externalBrowser);
       
-      // Process each batch in parallel
-      await Promise.all(batch.map(async (lot, index) => {
-        const currentIndex = i + index;
-        const imageUrl = lot.image;
+      // Process each lot in sequential batches with a concurrency limit
+      const concurrencyLimit = 2; // Lower concurrency to avoid Cloudflare issues
+      const lots = resultsCopy.data.lots;
+      
+      // Process in batches
+      for (let i = 0; i < lots.length; i += concurrencyLimit) {
+        const batch = lots.slice(i, i + concurrencyLimit);
         
-        if (!imageUrl) {
-          console.log(`No image URL for lot ${lot.lotNumber || currentIndex}`);
-          return;
-        }
+        console.log(`Processing batch ${Math.floor(i/concurrencyLimit) + 1} of ${Math.ceil(lots.length/concurrencyLimit)}`);
         
-        // Log the original image URL format
-        console.log(`Processing image: ${imageUrl} for lot ${lot.lotNumber || currentIndex}`);
-        
-        try {
-          // Save the image and get the storage path
-          const gcsPath = await this.saveImage(
-            imageUrl, 
-            category, 
-            lot.lotNumber || `item_${currentIndex}`, 
-            subcategory
-          );
+        // Process each batch in parallel
+        await Promise.all(batch.map(async (lot, index) => {
+          const currentIndex = i + index;
+          const imageUrl = lot.image;
           
-          // Add the storage path to the lot data
-          if (gcsPath) {
-            lots[currentIndex].imagePath = gcsPath;
+          if (!imageUrl) {
+            console.log(`No image URL for lot ${lot.lotNumber || currentIndex}`);
+            return;
           }
-        } catch (error) {
-          console.error(`Failed to save image for lot ${lot.lotNumber || currentIndex}: ${error.message}`);
+          
+          // Log the original image URL format
+          console.log(`Processing image: ${imageUrl} for lot ${lot.lotNumber || currentIndex}`);
+          
+          try {
+            // Save the image and get the storage path - pass the browser instance
+            const gcsPath = await this.saveImage(
+              imageUrl, 
+              category, 
+              lot.lotNumber || `item_${currentIndex}`, 
+              subcategory,
+              this.browser // Reuse the same browser instance
+            );
+            
+            // Add the storage path to the lot data
+            if (gcsPath) {
+              lots[currentIndex].imagePath = gcsPath;
+            }
+          } catch (error) {
+            console.error(`Failed to save image for lot ${lot.lotNumber || currentIndex}: ${error.message}`);
+          }
+        }));
+        
+        // Small delay between batches to avoid overwhelming the server and triggering rate limits
+        if (i + concurrencyLimit < lots.length) {
+          const delayMs = 1500; // Longer delay between batches
+          console.log(`Waiting ${delayMs}ms before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
         }
-      }));
-      
-      // Small delay between batches to avoid overwhelming the server
-      if (i + concurrencyLimit < lots.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
       }
+      
+      console.log(`Completed image processing for ${category}`);
+      return resultsCopy;
+    } finally {
+      // Close the browser if we created it
+      await this.closeBrowser();
     }
-    
-    console.log(`Completed image processing for ${category}`);
-    return resultsCopy;
   }
 }
 

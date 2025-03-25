@@ -402,6 +402,14 @@ class BrowserManager {
   getPage() {
     return this.pages.get('main');
   }
+  
+  /**
+   * Get the underlying Puppeteer browser instance
+   * @returns {Object} The browser instance
+   */
+  getBrowser() {
+    return this.browser;
+  }
 }
 
 module.exports = BrowserManager;

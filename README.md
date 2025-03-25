@@ -40,11 +40,18 @@ Supports comprehensive search parameters including query, price ranges, and cate
 Enable automatic image downloading with the following parameters:
 - `saveToGcs=true` - Save results to Google Cloud Storage
 - `saveImages=true` - Download and save item images to GCS
+- `bucket` - Optional custom GCS bucket name (defaults to environment variable STORAGE_BUCKET)
 
 Images are saved in a structured format:
 ```
 invaluable-data/{category}/{subcategory}/images/{lotNumber}_{filename}.jpg
 ```
+
+The image download feature uses browser-based downloading to bypass Cloudflare protection:
+- Reuses the existing browser session that already passed Cloudflare checks
+- Falls back to direct HTTP download if browser method fails
+- Handles batched downloads with rate limiting to avoid detection
+- Attempts multiple strategies to capture images protected by Cloudflare
 
 ### Furniture Subcategories
 ```
