@@ -105,6 +105,9 @@ curl "http://localhost:8080/api/search?query=furniture&priceResult%5Bmin%5D=1750
 # Search with image saving
 curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true"
 
+# Search with custom storage bucket
+curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true&bucket=custom-bucket-name"
+
 # Furniture subcategory with auto-pagination
 curl "http://localhost:8080/api/furniture/scrape/Chairs?fetchAllPages=true"
 

@@ -253,8 +253,16 @@ class SearchStorageService {
     }
 
     try {
-      // Fix image URL if needed (ensure https)
-      const url = imageUrl.startsWith('http') ? imageUrl : `https:${imageUrl}`;
+      // Fix image URL if needed (ensure complete URL)
+      let url = imageUrl;
+      if (!url.startsWith('http')) {
+        // If it starts with a house name without the proper prefix
+        if (!url.startsWith('image.invaluable.com')) {
+          url = `https://image.invaluable.com/housePhotos/${url}`;
+        } else {
+          url = `https://${url}`;
+        }
+      }
       
       // Generate GCS file path for the image
       const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
@@ -327,6 +335,9 @@ class SearchStorageService {
           console.log(`No image URL for lot ${lot.lotNumber || currentIndex}`);
           return;
         }
+        
+        // Log the original image URL format
+        console.log(`Processing image: ${imageUrl} for lot ${lot.lotNumber || currentIndex}`);
         
         try {
           // Save the image and get the storage path

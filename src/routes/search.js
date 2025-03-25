@@ -224,6 +224,9 @@ router.get('/', async (req, res) => {
     
     // Check if we should save to GCS
     const saveToGcs = req.query.saveToGcs === 'true';
+    
+    // Check for custom bucket name
+    const customBucket = req.query.bucket;
     delete searchParams.saveToGcs;
     
     // Get category/search term for storage
@@ -367,6 +370,18 @@ router.get('/', async (req, res) => {
         const currentPage = formattedResults.pagination?.currentPage || 1;
         console.log(`Saving search results to GCS for category: ${category}, page: ${currentPage}`);
         
+        // Get custom storage options if provided
+        const storageOptions = {};
+        if (customBucket) {
+          console.log(`Using custom bucket: ${customBucket}`);
+          storageOptions.bucketName = customBucket;
+        }
+        
+        // Create storage instance with custom options if needed
+        const storage = customBucket 
+          ? new SearchStorageService(storageOptions) 
+          : searchStorage;
+                
         // Check if we should also save images 
         const saveImages = req.query.saveImages === 'true';
         
@@ -375,7 +390,7 @@ router.get('/', async (req, res) => {
           
           // Save all images and update response with image paths
           try {
-            standardizedResponse = await searchStorage.saveAllImages(
+            standardizedResponse = await storage.saveAllImages(
               standardizedResponse, 
               category,
               searchParams.subcategory || null
@@ -388,7 +403,7 @@ router.get('/', async (req, res) => {
         }
         
         // Store the standardized response in GCS
-        const gcsPath = await searchStorage.savePageResults(category, currentPage, standardizedResponse);
+        const gcsPath = await storage.savePageResults(category, currentPage, standardizedResponse);
         console.log(`Saved search results to GCS at: ${gcsPath}`);
       } catch (error) {
         console.error('Error saving search results to GCS:', error);
@@ -427,6 +442,9 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
     // Check if we should save to GCS
     const saveToGcs = req.body.saveToGcs === true;
     
+    // Check for custom bucket name
+    const customBucket = req.body.bucket;
+    
     // Get category/search term for storage
     const category = searchParams.query || 'uncategorized';
     
@@ -444,6 +462,18 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
         const currentPage = formattedResults.pagination?.currentPage || 1;
         console.log(`Saving direct API data to GCS for category: ${category}, page: ${currentPage}`);
         
+        // Get custom storage options if provided
+        const storageOptions = {};
+        if (customBucket) {
+          console.log(`Using custom bucket: ${customBucket}`);
+          storageOptions.bucketName = customBucket;
+        }
+        
+        // Create storage instance with custom options if needed
+        const storage = customBucket 
+          ? new SearchStorageService(storageOptions) 
+          : searchStorage;
+        
         // Check if we should also save images
         const saveImages = req.body.saveImages === true;
         
@@ -452,7 +482,7 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
           
           // Save all images and update response with image paths
           try {
-            standardizedResponse = await searchStorage.saveAllImages(
+            standardizedResponse = await storage.saveAllImages(
               standardizedResponse, 
               category,
               searchParams.subcategory || null
@@ -465,7 +495,7 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
         }
         
         // Store the standardized response in GCS instead of raw data
-        const gcsPath = await searchStorage.savePageResults(category, currentPage, standardizedResponse);
+        const gcsPath = await storage.savePageResults(category, currentPage, standardizedResponse);
         console.log(`Saved direct API data to GCS at: ${gcsPath}`);
       } catch (error) {
         console.error('Error saving direct API data to GCS:', error);
@@ -503,6 +533,9 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
     
     // Check if we should save to GCS
     const saveToGcs = req.body.saveToGcs === true;
+    
+    // Check for custom bucket name
+    const customBucket = req.body.bucket;
     
     // Get category/search term for storage
     const category = searchParams.query || 'uncategorized';
@@ -543,6 +576,18 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
       try {
         console.log(`Saving ${pages.length} individual page results to GCS for category: ${category}`);
         
+        // Get custom storage options if provided
+        const storageOptions = {};
+        if (customBucket) {
+          console.log(`Using custom bucket: ${customBucket}`);
+          storageOptions.bucketName = customBucket;
+        }
+        
+        // Create storage instance with custom options if needed
+        const storage = customBucket 
+          ? new SearchStorageService(storageOptions) 
+          : searchStorage;
+        
         // Check if we should also save images
         const saveImages = req.body.saveImages === true;
         
@@ -564,7 +609,7 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
             console.log(`Also saving ${pageStandardizedResponse.data.lots.length} images for page ${pageNumber}...`);
             
             try {
-              const updatedResponse = await searchStorage.saveAllImages(
+              const updatedResponse = await storage.saveAllImages(
                 pageStandardizedResponse,
                 category,
                 searchParams.subcategory || null
@@ -580,7 +625,7 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
           }
           
           // Store the formatted page results in GCS
-          const gcsPath = await searchStorage.savePageResults(category, pageNumber, pageStandardizedResponse);
+          const gcsPath = await storage.savePageResults(category, pageNumber, pageStandardizedResponse);
           console.log(`Saved page ${pageNumber} results to GCS at: ${gcsPath}`);
         }
         
@@ -589,7 +634,7 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
           console.log(`Also saving ${standardizedResponse.data.lots.length} images for combined results...`);
           
           try {
-            standardizedResponse = await searchStorage.saveAllImages(
+            standardizedResponse = await storage.saveAllImages(
               standardizedResponse,
               category,
               searchParams.subcategory || null
@@ -600,7 +645,7 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
           }
           
           // Save the updated combined response
-          const combinedGcsPath = await searchStorage.savePageResults(category, 'combined', standardizedResponse);
+          const combinedGcsPath = await storage.savePageResults(category, 'combined', standardizedResponse);
           console.log(`Saved combined results to GCS at: ${combinedGcsPath}`);
         }
       } catch (error) {

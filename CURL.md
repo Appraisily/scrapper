@@ -19,6 +19,7 @@ Any valid Invaluable search parameters can be used. Common parameters include:
 - `upcoming`: Filter for upcoming auctions (true/false)
 - `saveToGcs`: Save results to Google Cloud Storage (true/false)
 - `saveImages`: Download and save item images (true/false)
+- `bucket`: Optional custom GCS bucket name (defaults to environment variable STORAGE_BUCKET)
 
 ## Examples
 
@@ -37,6 +38,9 @@ curl "http://localhost:8080/api/search?houseName=DOYLE%20Auctioneers%20%26%20App
 
 # Search with image saving
 curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true"
+
+# Search with custom bucket
+curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true&bucket=invaluable-html-archive-dev"
 ```
 
 ## Response Format
@@ -61,7 +65,7 @@ curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages
           "currency": "USD",
           "symbol": "$"
         },
-        "image": "https://image.invaluable.com/housePhotos/example/123/789123.jpg",
+        "image": "example/123/789123.jpg",
         "imagePath": "gs://invaluable-html-archive/invaluable-data/furniture/dining-table/images/lot123_789123.jpg",
         "lotNumber": "123",
         "saleType": "Live"
