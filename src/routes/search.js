@@ -367,7 +367,27 @@ router.get('/', async (req, res) => {
         const currentPage = formattedResults.pagination?.currentPage || 1;
         console.log(`Saving search results to GCS for category: ${category}, page: ${currentPage}`);
         
-        // Store the standardized response in GCS instead of raw results
+        // Check if we should also save images 
+        const saveImages = req.query.saveImages === 'true';
+        
+        if (saveImages && standardizedResponse.data.lots.length > 0) {
+          console.log(`Also saving ${standardizedResponse.data.lots.length} images...`);
+          
+          // Save all images and update response with image paths
+          try {
+            standardizedResponse = await searchStorage.saveAllImages(
+              standardizedResponse, 
+              category,
+              searchParams.subcategory || null
+            );
+            console.log('Images saved successfully');
+          } catch (imageError) {
+            console.error('Error saving images:', imageError.message);
+            // Continue with saving the JSON response even if image saving fails
+          }
+        }
+        
+        // Store the standardized response in GCS
         const gcsPath = await searchStorage.savePageResults(category, currentPage, standardizedResponse);
         console.log(`Saved search results to GCS at: ${gcsPath}`);
       } catch (error) {
@@ -423,6 +443,26 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
       try {
         const currentPage = formattedResults.pagination?.currentPage || 1;
         console.log(`Saving direct API data to GCS for category: ${category}, page: ${currentPage}`);
+        
+        // Check if we should also save images
+        const saveImages = req.body.saveImages === true;
+        
+        if (saveImages && standardizedResponse.data.lots.length > 0) {
+          console.log(`Also saving ${standardizedResponse.data.lots.length} images...`);
+          
+          // Save all images and update response with image paths
+          try {
+            standardizedResponse = await searchStorage.saveAllImages(
+              standardizedResponse, 
+              category,
+              searchParams.subcategory || null
+            );
+            console.log('Images saved successfully');
+          } catch (imageError) {
+            console.error('Error saving images:', imageError.message);
+            // Continue with saving the JSON response even if image saving fails
+          }
+        }
         
         // Store the standardized response in GCS instead of raw data
         const gcsPath = await searchStorage.savePageResults(category, currentPage, standardizedResponse);
@@ -503,6 +543,9 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
       try {
         console.log(`Saving ${pages.length} individual page results to GCS for category: ${category}`);
         
+        // Check if we should also save images
+        const saveImages = req.body.saveImages === true;
+        
         // Save each page individually
         for (let i = 0; i < pages.length; i++) {
           const page = pages[i];
@@ -516,9 +559,49 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
             page: pageNumber
           });
           
+          // Save images if enabled
+          if (saveImages && pageStandardizedResponse.data.lots.length > 0) {
+            console.log(`Also saving ${pageStandardizedResponse.data.lots.length} images for page ${pageNumber}...`);
+            
+            try {
+              const updatedResponse = await searchStorage.saveAllImages(
+                pageStandardizedResponse,
+                category,
+                searchParams.subcategory || null
+              );
+              
+              // Use the updated response with image paths
+              pageStandardizedResponse = updatedResponse;
+              console.log(`Images for page ${pageNumber} saved successfully`);
+            } catch (imageError) {
+              console.error(`Error saving images for page ${pageNumber}:`, imageError.message);
+              // Continue with saving the JSON response even if image saving fails
+            }
+          }
+          
           // Store the formatted page results in GCS
           const gcsPath = await searchStorage.savePageResults(category, pageNumber, pageStandardizedResponse);
           console.log(`Saved page ${pageNumber} results to GCS at: ${gcsPath}`);
+        }
+        
+        // If we're also saving images for the combined response
+        if (saveImages && standardizedResponse.data.lots.length > 0) {
+          console.log(`Also saving ${standardizedResponse.data.lots.length} images for combined results...`);
+          
+          try {
+            standardizedResponse = await searchStorage.saveAllImages(
+              standardizedResponse,
+              category,
+              searchParams.subcategory || null
+            );
+            console.log('Combined results images saved successfully');
+          } catch (imageError) {
+            console.error('Error saving combined results images:', imageError.message);
+          }
+          
+          // Save the updated combined response
+          const combinedGcsPath = await searchStorage.savePageResults(category, 'combined', standardizedResponse);
+          console.log(`Saved combined results to GCS at: ${combinedGcsPath}`);
         }
       } catch (error) {
         console.error('Error saving combined pages to GCS:', error);

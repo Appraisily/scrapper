@@ -17,6 +17,8 @@ Any valid Invaluable search parameters can be used. Common parameters include:
 - `priceResult[max]`: Maximum price
 - `houseName`: Auction house name
 - `upcoming`: Filter for upcoming auctions (true/false)
+- `saveToGcs`: Save results to Google Cloud Storage (true/false)
+- `saveImages`: Download and save item images (true/false)
 
 ## Examples
 
@@ -32,6 +34,9 @@ curl "http://localhost:8080/api/search?supercategoryName=Furniture&priceResult[m
 
 # Search specific auction house
 curl "http://localhost:8080/api/search?houseName=DOYLE%20Auctioneers%20%26%20Appraisers&query=antique"
+
+# Search with image saving
+curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true"
 ```
 
 ## Response Format
@@ -45,11 +50,25 @@ curl "http://localhost:8080/api/search?houseName=DOYLE%20Auctioneers%20%26%20App
     "priceResult[min]": "250",
     "priceResult[max]": "500"
   },
-  "data": [
-    {
-      // Captured JSON responses from catResults endpoint
-    }
-  ]
+  "data": {
+    "lots": [
+      {
+        "title": "Antique French Provincial Dining Table",
+        "date": "2025-04-15T10:00:00Z",
+        "auctionHouse": "Example Auction House",
+        "price": {
+          "amount": 1200,
+          "currency": "USD",
+          "symbol": "$"
+        },
+        "image": "https://image.invaluable.com/housePhotos/example/123/789123.jpg",
+        "imagePath": "gs://invaluable-html-archive/invaluable-data/furniture/dining-table/images/lot123_789123.jpg",
+        "lotNumber": "123",
+        "saleType": "Live"
+      }
+    ],
+    "totalResults": 1
+  }
 }
 ```
 

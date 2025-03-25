@@ -1,9 +1,10 @@
 /**
  * Search Results Storage Service for Google Cloud Storage
- * Handles saving search results to specified GCS bucket
+ * Handles saving search results and associated images to specified GCS bucket
  */
 const { Storage } = require('@google-cloud/storage');
 const path = require('path');
+const axios = require('axios');
 
 class SearchStorageService {
   constructor(options = {}) {
@@ -29,6 +30,16 @@ class SearchStorageService {
     }
     
     this.bucket = this.storage.bucket(this.bucketName);
+    
+    // HTTP client for image downloading
+    this.httpClient = axios.create({
+      timeout: 10000, // 10 seconds timeout
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+        'Referer': 'https://www.invaluable.com/',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+      }
+    });
   }
   
   /**
@@ -204,6 +215,145 @@ class SearchStorageService {
       console.error(`Error listing existing pages: ${error.message}`);
       return [];
     }
+  }
+
+  /**
+   * Generate image file path for an auction item
+   * Format: invaluable-data/{category}/{subcategory}/images/{lotNumber}_{imageName}.jpg
+   * @param {string} category - Category/search term
+   * @param {string} subcategory - Optional subcategory
+   * @param {string} lotNumber - Lot number of the item
+   * @param {string} imageUrl - Original image URL
+   * @returns {string} - GCS file path for the image
+   */
+  getImageFilePath(category, subcategory, lotNumber, imageUrl) {
+    // Extract the image filename from the URL
+    const imageFileName = path.basename(imageUrl);
+    const sanitizedCategory = this.sanitizeName(category);
+    
+    if (subcategory) {
+      const sanitizedSubcategory = this.sanitizeName(subcategory);
+      return `invaluable-data/${sanitizedCategory}/${sanitizedSubcategory}/images/${lotNumber}_${imageFileName}`;
+    } else {
+      return `invaluable-data/${sanitizedCategory}/images/${lotNumber}_${imageFileName}`;
+    }
+  }
+
+  /**
+   * Download an image from URL and save to GCS
+   * @param {string} imageUrl - URL of the image to download
+   * @param {string} category - Category/search term
+   * @param {string} lotNumber - Lot number of the item
+   * @param {string} subcategory - Optional subcategory
+   * @returns {Promise<string>} - GCS file path where image was saved
+   */
+  async saveImage(imageUrl, category, lotNumber, subcategory = null) {
+    if (!imageUrl || !category || !lotNumber) {
+      throw new Error('Image URL, category, and lot number are required for storing images');
+    }
+
+    try {
+      // Fix image URL if needed (ensure https)
+      const url = imageUrl.startsWith('http') ? imageUrl : `https:${imageUrl}`;
+      
+      // Generate GCS file path for the image
+      const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
+      
+      // Check if image already exists in storage
+      const file = this.bucket.file(filePath);
+      const [exists] = await file.exists();
+      
+      if (exists) {
+        console.log(`Image already exists at gs://${this.bucketName}/${filePath}`);
+        return `gs://${this.bucketName}/${filePath}`;
+      }
+      
+      // Download image with proper headers
+      console.log(`Downloading image from ${url}`);
+      const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
+      
+      // Get content type from response
+      const contentType = response.headers['content-type'] || 'image/jpeg';
+      
+      // Save image to GCS
+      await file.save(response.data, {
+        contentType,
+        metadata: {
+          cacheControl: 'public, max-age=31536000', // Cache for 1 year
+          source: url
+        },
+      });
+      
+      console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
+      return `gs://${this.bucketName}/${filePath}`;
+    } catch (error) {
+      console.error(`Error saving image: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Process and save images for search results
+   * @param {Object} searchResults - Formatted search results
+   * @param {string} category - Category/search term
+   * @param {string} subcategory - Optional subcategory
+   * @returns {Promise<Object>} - Results with added image storage paths
+   */
+  async saveAllImages(searchResults, category, subcategory = null) {
+    if (!searchResults || !searchResults.data || !searchResults.data.lots) {
+      console.warn('No valid search results provided for image saving');
+      return searchResults;
+    }
+
+    console.log(`Processing images for ${searchResults.data.lots.length} items in ${category}`);
+    
+    // Create a copy of the results to avoid modifying the original
+    const resultsCopy = JSON.parse(JSON.stringify(searchResults));
+    
+    // Process each lot in parallel with a concurrency limit
+    const concurrencyLimit = 5; // Limit concurrent downloads to avoid rate limiting
+    const lots = resultsCopy.data.lots;
+    
+    // Process in batches
+    for (let i = 0; i < lots.length; i += concurrencyLimit) {
+      const batch = lots.slice(i, i + concurrencyLimit);
+      
+      // Process each batch in parallel
+      await Promise.all(batch.map(async (lot, index) => {
+        const currentIndex = i + index;
+        const imageUrl = lot.image;
+        
+        if (!imageUrl) {
+          console.log(`No image URL for lot ${lot.lotNumber || currentIndex}`);
+          return;
+        }
+        
+        try {
+          // Save the image and get the storage path
+          const gcsPath = await this.saveImage(
+            imageUrl, 
+            category, 
+            lot.lotNumber || `item_${currentIndex}`, 
+            subcategory
+          );
+          
+          // Add the storage path to the lot data
+          if (gcsPath) {
+            lots[currentIndex].imagePath = gcsPath;
+          }
+        } catch (error) {
+          console.error(`Failed to save image for lot ${lot.lotNumber || currentIndex}: ${error.message}`);
+        }
+      }));
+      
+      // Small delay between batches to avoid overwhelming the server
+      if (i + concurrencyLimit < lots.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    console.log(`Completed image processing for ${category}`);
+    return resultsCopy;
   }
 }
 
