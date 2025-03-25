@@ -1,0 +1,6 @@
+# One-line command to list all folders and save to JSON file
+
+gsutil ls -d "gs://invaluable-html-archive/**/" | sed "s|gs://invaluable-html-archive/||" | sed 's|/$||' | jq -R -s 'split("\n") | map(select(length > 0)) | {bucket: "invaluable-html-archive", timestamp: now | todate, folders: .}' > invaluable_all_folders.json
+
+# Alternative command if jq is not available
+gsutil ls -d "gs://invaluable-html-archive/**/" > all_folders.txt
