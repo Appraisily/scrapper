@@ -1,0 +1,8 @@
+--------------------------------------------
+Processing keyword: '['
+Started at: Wed Mar 26 00:38:03 CET 2025
+Sending scrape request for first page of '['...
+Error: Empty response from service for keyword '[' (Attempt 1/3)
+Waiting 29 seconds before retry...
+Error: Empty response from service for keyword '[' (Attempt 2/3)
+Waiting 27 seconds before retry...

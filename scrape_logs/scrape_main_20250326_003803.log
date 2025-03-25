@@ -1,0 +1,16 @@
+==== INVALUABLE DATA SCRAPING PROCESS ====
+Started at: Wed Mar 26 00:38:03 CET 2025
+Service URL: https://scrapper-856401495068.us-central1.run.app/api/search
+Target bucket: invaluable-html-archive-images
+Keywords file: KWs.txt
+Batch size: 50
+Max pages per keyword: 20
+Total keywords to process: 2829
+No progress file found. Starting from the beginning.
+============================================
+Processing Batch #1: Keywords 1-50 (Total: 50)
+Started at: Wed Mar 26 00:38:03 CET 2025
+[1/2829] Processing keyword: '['
+--------------------------------------------
+Processing keyword: '['
+Sending scrape request for first page of '['...
