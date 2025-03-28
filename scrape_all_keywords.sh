@@ -1,6 +1,7 @@
 #!/bin/bash
 # Orchestration script for keyword scraping
-# Simply calls the scraper service for each keyword in the list
+# This script processes all keywords from KWs.txt using the /api/search endpoint 
+# IMPORTANT: Only use the /api/search endpoint, not /api/scraper/start
 
 # Configuration
 SERVICE_URL="https://scrapper-856401495068.us-central1.run.app/api/search"
@@ -29,6 +30,23 @@ fi
 if [ ! -f "$INPUT_FILE" ]; then
   echo "Error: Keywords file $INPUT_FILE not found!" | tee -a $LOG_FILE
   exit 1
+fi
+
+# Extract keywords from JSON array format safely by using 'jq' if available
+if command -v jq &> /dev/null; then
+  echo "Using jq to parse JSON array" >> $LOG_FILE
+  # Create a clean keywords file from the JSON format
+  jq -r ".[] | select(. != null)" "$INPUT_FILE" > clean_keywords.txt
+  INPUT_FILE="clean_keywords.txt"
+  echo "Created clean keywords file from JSON array" >> $LOG_FILE
+else
+  echo "WARNING: jq not found. If your KWs.txt is in JSON format, parsing may not work correctly." | tee -a $LOG_FILE
+  # Try a simple extraction as fallback
+  if grep -q "^\[" "$INPUT_FILE"; then
+    echo "Detected JSON array format, attempting simple extraction..." >> $LOG_FILE
+    grep -v "^\[" "$INPUT_FILE" | grep -v "^\]" | sed 's/^[ ]*"//' | sed 's/",\?$//g' > clean_keywords.txt
+    INPUT_FILE="clean_keywords.txt"
+  fi
 fi
 
 # Count total keywords
@@ -64,7 +82,9 @@ while read -r KW; do
   # - fetchAllPages=true: Let the service scrape all available pages
   echo "Sending request to service..." >> $LOG_FILE
   
-  RESPONSE=$(curl -s -g "$SERVICE_URL?query=$CLEAN_KW&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true")
+  # IMPORTANT: Make sure saveImages=true is included for image downloading
+  # Add more Invaluable-specific parameters to match their website format
+  RESPONSE=$(curl -s -g "$SERVICE_URL?query=$CLEAN_KW&keyword=$CLEAN_KW&priceResult%5Bmin%5D=250&upcoming=false&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true")
   
   # Check for successful response
   if [ -z "$RESPONSE" ]; then
@@ -97,6 +117,7 @@ done < temp_remaining_keywords.txt
 
 # Clean up
 rm temp_remaining_keywords.txt
+[ -f "clean_keywords.txt" ] && rm clean_keywords.txt
 
 # Final summary
 echo "====================================" >> $LOG_FILE

@@ -11,6 +11,16 @@ The scraping process involves:
 3. The service handles scraping data and images for each keyword
 4. All data is saved to the GCS bucket in an organized structure
 
+## Important: Preferred Endpoint
+
+**IMPORTANT**: Based on testing and production experience, you should only use the `/api/search` endpoint:
+
+```
+https://scrapper-856401495068.us-central1.run.app/api/search
+```
+
+The other endpoints (like `/api/scraper/start`) may have browser initialization issues in the Cloud Run environment and are not recommended for production use.
+
 ## Setup
 
 ### Bucket Creation
@@ -27,14 +37,16 @@ gcloud storage buckets create gs://invaluable-html-archive-images \
 
 ### Input File
 
-Ensure you have a file called `KWs.txt` with one keyword per line. Example:
+Your `KWs.txt` file should be formatted as a JSON array. Example:
 
-```
-antique furniture
-fine art
-victorian chairs
-chinese porcelain
-vintage jewelry
+```json
+[
+  "antique furniture",
+  "fine art",
+  "victorian chairs",
+  "chinese porcelain",
+  "vintage jewelry"
+]
 ```
 
 ## Scraping Scripts
@@ -48,6 +60,11 @@ This script processes the first 3 keywords from your list to verify everything w
 ```bash
 chmod +x test_scrape.sh
 ./test_scrape.sh
+```
+
+You can also specify a specific keyword to test:
+```bash
+./test_scrape.sh "asian-art"
 ```
 
 ### 2. Main Orchestration Script (`scrape_all_keywords.sh`)
@@ -72,9 +89,11 @@ https://scrapper-856401495068.us-central1.run.app/api/search?query=YOUR_KEYWORD&
 Parameters explained:
 - `query`: The search keyword (URL-encoded)
 - `saveToGcs`: Flag to save results to Google Cloud Storage
-- `saveImages`: Flag to download and save item images
+- `saveImages`: Flag to download and save item images (IMPORTANT: set to `true` to enable image downloading)
 - `bucket`: Destination GCS bucket name
 - `fetchAllPages`: Flag to scrape all available result pages
+
+**IMPORTANT**: Always include `saveImages=true` if you want to download images. The image downloading feature is implemented in the `/api/search` endpoint but is only activated when this parameter is set to `true`.
 
 ### Progress Tracking
 
