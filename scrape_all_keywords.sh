@@ -72,9 +72,8 @@ while read -r KW; do
   echo "[$CURRENT/$TOTAL_REMAINING] Processing keyword: '$KW'" | tee -a $LOG_FILE
   echo "Started at $(date)" >> $LOG_FILE
   
-  # Format URL parameters - replace hyphens with spaces and encode properly
-  FORMATTED_KW=$(echo "$KW" | tr '-' ' ')
-  ENCODED_KW=$(echo "$FORMATTED_KW" | tr ' ' '%20')
+  # Prepare the keyword for URL
+  CLEAN_KW=$(echo "$KW" | tr ' ' '+')
   
   # Call the scraper service with full options
   # - saveToGcs=true: Save results to GCS
@@ -84,8 +83,7 @@ while read -r KW; do
   echo "Sending request to service..." >> $LOG_FILE
   
   # IMPORTANT: Make sure saveImages=true is included for image downloading
-  # Match Invaluable's exact URL format
-  RESPONSE=$(curl -s -g "$SERVICE_URL?query=$ENCODED_KW&keyword=$ENCODED_KW&currentBid%5Bmin%5D=250&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true")
+  RESPONSE=$(curl -s -g "$SERVICE_URL?query=$CLEAN_KW&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true")
   
   # Check for successful response
   if [ -z "$RESPONSE" ]; then
