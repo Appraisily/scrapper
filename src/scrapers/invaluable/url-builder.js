@@ -9,12 +9,17 @@
  */
 function constructSearchUrl(params = {}) {
   const baseUrl = 'https://www.invaluable.com/search';
-  const searchParams = new URLSearchParams();
+  // Creamos un objeto de parámetros personalizado en lugar de URLSearchParams
+  // para poder controlar exactamente cómo se codifican los espacios
+  const searchParamsObj = {};
 
+  // Añadir upcoming=false que es necesario para la URL correcta
+  searchParamsObj['upcoming'] = 'false';
+  
   // Usar currentBid en lugar de priceResult para el rango de precios
-  searchParams.append('currentBid[min]', params.currentBid_min || params.priceResult_min || '250');
+  searchParamsObj['currentBid[min]'] = params.currentBid_min || params.priceResult_min || '250';
   if (params.currentBid_max || (params.priceResult && params.priceResult.max)) {
-    searchParams.append('currentBid[max]', params.currentBid_max || (params.priceResult && params.priceResult.max));
+    searchParamsObj['currentBid[max]'] = params.currentBid_max || (params.priceResult && params.priceResult.max);
   }
   
   // Procesar el query reemplazando guiones por espacios
@@ -22,30 +27,55 @@ function constructSearchUrl(params = {}) {
   queryValue = queryValue.replace(/-/g, ' ');
   
   // Añadir parámetros de búsqueda requeridos
-  searchParams.append('query', queryValue);
-  searchParams.append('keyword', queryValue);
+  searchParamsObj['query'] = queryValue;
+  searchParamsObj['keyword'] = queryValue;
   
   // Manejar parámetros de paginación - solo añadir si no es página 1 (default)
   if (params.page && !isNaN(params.page) && params.page > 1) {
-    searchParams.append('page', params.page);
+    searchParamsObj['page'] = params.page;
   }
   
   // Manejar el parámetro de subcategoría de muebles si está presente
   if (params.furnitureSubcategory) {
     // Este es un parámetro especial que mapea a la estructura de URL de Invaluable para subcategorías de muebles
-    searchParams.append('Furniture', params.furnitureSubcategory);
+    searchParamsObj['Furniture'] = params.furnitureSubcategory;
   }
   
-  // Añadir todos los parámetros proporcionados
+  // Añadir solo parámetros relevantes para Invaluable (excluyendo parámetros de almacenamiento)
   Object.entries(params).forEach(([key, value]) => {
-    // Omitir parámetros que ya hemos configurado
+    // Omitir parámetros específicos de nuestra aplicación o ya configurados
     if (value !== undefined && value !== null && 
-        !['upcoming', 'query', 'keyword', 'priceResult', 'priceResult_min', 'currentBid_min', 'currentBid_max', 'page', 'furnitureSubcategory'].includes(key)) {
-      searchParams.append(key, value);
+        ![
+          // Parámetros ya configurados
+          'upcoming', 'query', 'keyword', 'priceResult', 'priceResult_min', 
+          'currentBid_min', 'currentBid_max', 'page', 'furnitureSubcategory',
+          // Parámetros específicos de nuestra aplicación de almacenamiento
+          'saveToGcs', 'saveImages', 'bucket', 'fetchAllPages'
+        ].includes(key)) {
+      searchParamsObj[key] = value;
     }
   });
 
-  return `${baseUrl}?${searchParams.toString()}`;
+  // Construir la URL manualmente para asegurarnos de codificar correctamente los espacios
+  const queryString = Object.entries(searchParamsObj)
+    .map(([key, value]) => {
+      // Codificar el key
+      const encodedKey = encodeURIComponent(key);
+      
+      // Si es query o keyword, usamos %20 para espacios en lugar de +
+      let encodedValue;
+      if (key === 'query' || key === 'keyword') {
+        // Asegurar que los espacios sean %20 para query y keyword
+        encodedValue = encodeURIComponent(value);
+      } else {
+        encodedValue = encodeURIComponent(value);
+      }
+      
+      return `${encodedKey}=${encodedValue}`;
+    })
+    .join('&');
+
+  return `${baseUrl}?${queryString}`;
 }
 
 /**
