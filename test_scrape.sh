@@ -63,12 +63,13 @@ for KW in "${KEYWORDS[@]}"; do
   echo "[$COUNT/${#KEYWORDS[@]}] Testing keyword: '$KW'"
   echo "Started at $(date)"
   
-  # Format URL parameters - properly encode query
-  ENCODED_KW=$(echo "$KW" | tr ' ' '+')
+  # Format URL parameters - replace hyphens with spaces and encode properly
+  FORMATTED_KW=$(echo "$KW" | tr '-' ' ')
+  ENCODED_KW=$(echo "$FORMATTED_KW" | tr ' ' '%20')
   
   # Build URL with query parameters - include saveImages=true to download images
-  # Add more Invaluable-specific parameters to match their website format
-  REQUEST_URL="$SERVICE_URL?query=$ENCODED_KW&keyword=$ENCODED_KW&priceResult%5Bmin%5D=250&upcoming=false&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME"
+  # Match Invaluable's exact URL format
+  REQUEST_URL="$SERVICE_URL?query=$ENCODED_KW&keyword=$ENCODED_KW&currentBid%5Bmin%5D=250&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME"
   
   echo "Request URL: $REQUEST_URL"
   
