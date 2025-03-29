@@ -5,28 +5,39 @@ A powerful Node.js application for scraping auction data from Invaluable with re
 ## Key Features
 
 - **Advanced Browser Automation**
-  - Puppeteer with stealth plugins
-  - Cookie and session management
-  - Request/response interception
-  - Protection challenge handling
+  - Puppeteer with stealth plugins for bypassing anti-bot protections
+  - Sophisticated cookie and session management
+  - Request/response interception for capturing API data
+  - Automatic protection challenge handling
+  - Browser instance reuse for efficient resource utilization
 
 - **Intelligent Pagination**
-  - Auto-resumable data collection
-  - Progress tracking and checkpoints
-  - Metadata-driven page detection
-  - Skips already processed pages
+  - Auto-resumable data collection with checkpoints
+  - Progress tracking and detailed logging
+  - Metadata-driven page detection and navigation
+  - Skip already processed pages for faster re-runs
+  - Automatic rate limiting to avoid detection
+
+- **Comprehensive Image Downloading**
+  - Browser-based image downloading that bypasses Cloudflare protection
+  - Automatic image saving to Google Cloud Storage
+  - Structured storage paths for easy retrieval
+  - Optimized batching to prevent timeouts
+  - Fallback mechanisms when primary download fails
 
 - **Google Cloud Integration**
-  - Automatic storage in GCS buckets
-  - Structured data organization
-  - Batched storage for efficiency
-  - Image downloading and storage
+  - Seamless storage in GCS buckets with customizable paths
+  - Structured data organization by category and subcategory
+  - Efficient batched storage for optimal performance
+  - Automatic metadata inclusion for better searchability
+  - Support for custom bucket configuration
 
 - **RESTful API Interface**
-  - Dynamic parameter support
-  - Search endpoint with comprehensive options
+  - Dynamic parameter support for flexible queries
+  - Comprehensive search endpoint with extensive options
   - Category-specific scraping endpoints
   - Direct API data submission endpoint
+  - Batch processing of multiple requests
 
 ## API Endpoints
 
@@ -35,6 +46,10 @@ A powerful Node.js application for scraping auction data from Invaluable with re
 GET /api/search
 ```
 Supports comprehensive search parameters including query, price ranges, and categories.
+
+#### Pagination Control
+- `fetchAllPages=true` - Fetch all available pages of results
+- `maxPages=N` - Limit the number of pages to fetch
 
 #### Image Storage
 Enable automatic image downloading with the following parameters:
@@ -49,9 +64,10 @@ invaluable-data/{category}/{subcategory}/images/{lotNumber}_{filename}.jpg
 
 The image download feature uses browser-based downloading to bypass Cloudflare protection:
 - Reuses the existing browser session that already passed Cloudflare checks
-- Falls back to direct HTTP download if browser method fails
-- Handles batched downloads with rate limiting to avoid detection
-- Attempts multiple strategies to capture images protected by Cloudflare
+- Maintains cookies and authentication state during image downloads
+- Processes images in optimized batches to balance speed and resource usage
+- Uses increased timeout settings to handle large images
+- Implements page reuse strategies to minimize browser resource consumption
 
 ### Furniture Subcategories
 ```
@@ -84,6 +100,12 @@ Control endpoints for starting and monitoring scraping jobs.
    ```bash
    npm start
    ```
+
+## Resource Requirements
+
+- **Minimum**: 2 CPUs, 2GB RAM
+- **Recommended**: 4+ CPUs, 4-8GB RAM for handling image downloads and pagination
+- **Storage**: Depends on data volume, but plan for at least 10GB initially
 
 ## Docker Support
 
@@ -124,6 +146,19 @@ curl -X POST "http://localhost:8080/api/scraper/start" \
      -d '{"category":"furniture", "maxPages":10, "saveToGcs":true, "saveImages":true}'
 ```
 
+## Batch Scraping Scripts
+
+The repository includes several scripts for batch scraping operations:
+
+- `scrape_test_keywords.sh` - Test scrape with specific keywords
+- `scrape_all_keywords.sh` - Scrape all keywords from KWs.txt
+- `scrape_all_furniture_subcategories.sh` - Scrape all furniture subcategories
+
+Example usage:
+```bash
+./scrape_test_keywords.sh furniture
+```
+
 ## Project Structure
 
 ```
@@ -134,10 +169,20 @@ curl -X POST "http://localhost:8080/api/scraper/start" \
 │   │   ├── pagination/          # Pagination handling
 │   │   └── utils.js             # Utility functions
 │   ├── routes/                   # API endpoints
+│   │   ├── search.js            # Main search endpoint
+│   │   └── furniture-subcategories.js # Furniture-specific endpoints
 │   └── utils/                    # Storage utilities
+│       └── search-storage.js     # GCS storage management
 ├── Dockerfile                    # Container configuration
 └── cloudbuild.yaml              # Cloud deployment
 ```
+
+## Performance Optimization
+
+- **Browser Reuse**: The scraper reuses browser instances to reduce resource consumption
+- **Concurrency Control**: Manages parallel operations to balance performance and stability
+- **Batched Processing**: Processes images and results in batches for optimal performance
+- **Timeout Management**: Uses custom timeout settings to handle varying network conditions
 
 ## License
 
