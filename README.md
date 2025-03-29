@@ -105,7 +105,17 @@ Control endpoints for starting and monitoring scraping jobs.
 
 - **Minimum**: 2 CPUs, 2GB RAM
 - **Recommended**: 4+ CPUs, 4-8GB RAM for handling image downloads and pagination
+- **High Performance**: 8+ CPUs, 16GB RAM for large-scale concurrent image processing
 - **Storage**: Depends on data volume, but plan for at least 10GB initially
+
+The application now includes dynamic resource scaling based on available memory:
+
+| Memory Configuration | Concurrent Image Downloads | Browser Restart Frequency |
+|---------------------|---------------------------|---------------------------|
+| 2GB RAM | 3 (in Cloud Run), 2 (local) | Every ~30 images |
+| 4GB RAM | 6 (in Cloud Run), 4 (local) | Every ~60 images |
+| 8GB RAM | 10 (in Cloud Run), 6 (local) | Every ~120 images |
+| 16GB RAM | 16 (in Cloud Run), 6 (local) | Every ~240 images |
 
 ## Docker Support
 
@@ -180,9 +190,33 @@ Example usage:
 ## Performance Optimization
 
 - **Browser Reuse**: The scraper reuses browser instances to reduce resource consumption
-- **Concurrency Control**: Manages parallel operations to balance performance and stability
-- **Batched Processing**: Processes images and results in batches for optimal performance
-- **Timeout Management**: Uses custom timeout settings to handle varying network conditions
+- **Dynamic Concurrency**: Automatically adjusts parallel operations based on available memory
+- **Environment-Specific Configuration**: Optimizes settings for Cloud Run vs local environments
+- **Memory-Aware Processing**: Scales batch sizes and restart frequency based on resource availability
+- **Adaptive Timeout Management**: Uses custom timeout settings for varying network conditions
+
+See [Resource Optimization Guide](docs/resource-optimization.md) for configuration options.
+
+### Environment Configuration Options
+
+Configure the scraper's resource usage with environment variables:
+
+```bash
+# Set maximum memory available to the application (in GB)
+MAX_MEMORY_GB=8
+
+# Set explicit concurrency for image downloads (overrides automatic calculation)
+IMAGE_CONCURRENCY=10
+
+# Set environment type (cloud or local) to adjust optimization strategies
+ENVIRONMENT=cloud
+```
+
+These can also be passed as URL parameters to the API endpoints:
+
+```bash
+curl "http://localhost:8080/api/search?query=furniture&saveImages=true&maxMemoryGB=8&imageConcurrency=10"
+```
 
 ## License
 

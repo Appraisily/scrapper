@@ -239,7 +239,31 @@ router.get('/', async (req, res) => {
         searchParams.bucket = customBucket;
     }
     
+    // Extract resource configuration parameters
+    const maxMemoryGB = parseInt(req.query.maxMemoryGB) || 0; // 0 means use default from env
+    const imageConcurrency = parseInt(req.query.imageConcurrency) || 0; // 0 means automatic
+    const environment = req.query.environment || "cloud"; // default to cloud environment
+    
+    // Clean search params by removing our special parameters
     delete searchParams.saveToGcs;
+    delete searchParams.maxMemoryGB;
+    delete searchParams.imageConcurrency;
+    delete searchParams.environment;
+    
+    // Set environment variables for this request
+    if (maxMemoryGB > 0) {
+      process.env.MAX_MEMORY_GB = maxMemoryGB.toString();
+      console.log(`Setting MAX_MEMORY_GB=${maxMemoryGB} for this request`);
+    }
+    
+    if (imageConcurrency > 0) {
+      process.env.IMAGE_CONCURRENCY = imageConcurrency.toString();
+      console.log(`Setting IMAGE_CONCURRENCY=${imageConcurrency} for this request`);
+    }
+    
+    // Set environment type (affects optimization strategies)
+    process.env.ENVIRONMENT = environment;
+    console.log(`Setting ENVIRONMENT=${environment} for this request`);
     
     // Get category/search term for storage
     const category = searchParams.query || 'uncategorized';
@@ -583,6 +607,26 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
     // Check for custom bucket name
     const customBucket = req.body.bucket;
     
+    // Extract resource configuration parameters
+    const maxMemoryGB = parseInt(req.body.maxMemoryGB) || 0; // 0 means use default from env
+    const imageConcurrency = parseInt(req.body.imageConcurrency) || 0; // 0 means automatic
+    const environment = req.body.environment || "cloud"; // default to cloud environment
+    
+    // Set environment variables for this request
+    if (maxMemoryGB > 0) {
+      process.env.MAX_MEMORY_GB = maxMemoryGB.toString();
+      console.log(`Setting MAX_MEMORY_GB=${maxMemoryGB} for this POST request`);
+    }
+    
+    if (imageConcurrency > 0) {
+      process.env.IMAGE_CONCURRENCY = imageConcurrency.toString();
+      console.log(`Setting IMAGE_CONCURRENCY=${imageConcurrency} for this POST request`);
+    }
+    
+    // Set environment type (affects optimization strategies)
+    process.env.ENVIRONMENT = environment;
+    console.log(`Setting ENVIRONMENT=${environment} for this POST request`);
+    
     // Get category/search term for storage
     const category = searchParams.query || 'uncategorized';
     
@@ -687,6 +731,26 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
     
     // Check for custom bucket name
     const customBucket = req.body.bucket;
+    
+    // Extract resource configuration parameters
+    const maxMemoryGB = parseInt(req.body.maxMemoryGB) || 0; // 0 means use default from env
+    const imageConcurrency = parseInt(req.body.imageConcurrency) || 0; // 0 means automatic
+    const environment = req.body.environment || "cloud"; // default to cloud environment
+    
+    // Set environment variables for this request
+    if (maxMemoryGB > 0) {
+      process.env.MAX_MEMORY_GB = maxMemoryGB.toString();
+      console.log(`Setting MAX_MEMORY_GB=${maxMemoryGB} for combine-pages request`);
+    }
+    
+    if (imageConcurrency > 0) {
+      process.env.IMAGE_CONCURRENCY = imageConcurrency.toString();
+      console.log(`Setting IMAGE_CONCURRENCY=${imageConcurrency} for combine-pages request`);
+    }
+    
+    // Set environment type (affects optimization strategies)
+    process.env.ENVIRONMENT = environment;
+    console.log(`Setting ENVIRONMENT=${environment} for combine-pages request`);
     
     // Get category/search term for storage
     const category = searchParams.query || 'uncategorized';

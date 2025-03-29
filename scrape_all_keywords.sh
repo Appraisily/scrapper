@@ -90,8 +90,8 @@ scrape_keyword() {
   # Format URL parameters - properly encode query
   local encoded_kw=$(echo "$keyword" | tr ' ' '+')
   
-  # Build URL with query parameters - include saveImages=true to download images
-  local request_url="$SERVICE_URL?query=$encoded_kw&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true"
+  # Build URL with query parameters - include saveImages=true and resource configuration
+  local request_url="$SERVICE_URL?query=$encoded_kw&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true&maxMemoryGB=$MAX_MEMORY_GB&imageConcurrency=$IMAGE_CONCURRENCY&environment=$ENVIRONMENT"
   
   log "Processing keyword: '$keyword'"
   log "Request URL: $request_url"

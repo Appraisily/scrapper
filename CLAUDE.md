@@ -31,3 +31,14 @@
 - Store results in Google Cloud Storage buckets
 - Monitor logs in `scrape_logs/` directory
 - Use environment variables for sensitive configuration
+- Configure resource usage based on environment needs
+
+## Resource Optimization
+- Set `MAX_MEMORY_GB` environment variable to match available system memory
+- Use `IMAGE_CONCURRENCY` to control parallel image downloads
+- Set `ENVIRONMENT=local` for development and `ENVIRONMENT=cloud` for production
+- For large jobs, increase memory and adjust concurrency settings:
+  ```bash
+  MAX_MEMORY_GB=16 IMAGE_CONCURRENCY=12 npm start
+  ```
+- See `docs/resource-optimization.md` for detailed configuration options
