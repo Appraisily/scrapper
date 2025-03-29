@@ -528,8 +528,10 @@ class SearchStorageService {
       await this.initBrowser(externalBrowser);
       
       // Process each lot in sequential batches with a concurrency limit
-      const concurrencyLimit = 6; // Increased concurrency for faster processing
       const lots = resultsCopy.data.lots;
+      
+      // Increased concurrency and reduced delay to optimize image downloading
+      const concurrencyLimit = 12; // Increased from 6 to 12 for faster processing
       
       // Process in batches
       for (let i = 0; i < lots.length; i += concurrencyLimit) {
@@ -569,9 +571,9 @@ class SearchStorageService {
           }
         }));
         
-        // Small delay between batches to avoid overwhelming the server and triggering rate limits
+        // Reduced delay between batches
         if (i + concurrencyLimit < lots.length) {
-          const delayMs = 1500; // Longer delay between batches
+          const delayMs = 500; // Reduced from 1500ms to 500ms
           console.log(`Waiting ${delayMs}ms before next batch...`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }

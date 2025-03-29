@@ -136,10 +136,20 @@ async function handleSearch(browser, url, params = {}, cookies = [], config = {}
       try {
         // 1. Establecer contexto navegando a la URL de búsqueda
         console.log('Estableciendo contexto de navegación...');
-        await page.goto(url, {
+        const response = await page.goto(url, {
           waitUntil: 'networkidle2', 
           timeout: config.NAVIGATION_TIMEOUT || 30000
         });
+        
+        // Verificar si hubo redirección
+        if (response) {
+          const finalUrl = response.url();
+          console.log(`URL inicial: ${url}`);
+          console.log(`URL final después de redirecciones: ${finalUrl}`);
+          if (url !== finalUrl) {
+            console.log(`⚠️ Detectada redirección de URL`);
+          }
+        }
         
         // Verificar y manejar protección Cloudflare
         const protectionHandled = await browser.handleProtection();

@@ -13,14 +13,17 @@ function constructSearchUrl(params = {}) {
   // para poder controlar exactamente cómo se codifican los espacios
   const searchParamsObj = {};
 
-  // Añadir upcoming=false que es necesario para la URL correcta
-  searchParamsObj['upcoming'] = 'false';
+  // Usar el orden de parámetros observado en las redirecciones de Invaluable
+  // Primero currentBid, luego upcoming, luego query y keyword
   
   // Usar currentBid en lugar de priceResult para el rango de precios
   searchParamsObj['currentBid[min]'] = params.currentBid_min || params.priceResult_min || '250';
   if (params.currentBid_max || (params.priceResult && params.priceResult.max)) {
     searchParamsObj['currentBid[max]'] = params.currentBid_max || (params.priceResult && params.priceResult.max);
   }
+  
+  // Añadir upcoming=false que es necesario para la URL correcta
+  searchParamsObj['upcoming'] = 'false';
   
   // Procesar el query reemplazando guiones por espacios
   let queryValue = params.query || 'furniture';
