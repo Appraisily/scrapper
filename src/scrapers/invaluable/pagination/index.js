@@ -217,6 +217,52 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
             const category = params.query || 'uncategorized';
             // Determinar subcategoría si existe
             const subcategory = params.furnitureSubcategory || null;
+            
+            // Verificar si debemos guardar imágenes (primero desde config, luego desde params)
+            const saveImages = (config.saveImages === 'true' || config.saveImages === true) || 
+                              (params.saveImages === 'true' || params.saveImages === true);
+            
+            if (saveImages) {
+              console.log(`🖼️ Guardando también imágenes para la página ${pageNum}...`);
+              // Convertir pageResults a formato estándar para saveAllImages
+              const formattedLots = pageResults.results[0].hits.map(hit => ({
+                title: hit.lotTitle,
+                date: hit.dateTimeLocal,
+                auctionHouse: hit.houseName,
+                price: {
+                  amount: hit.priceResult,
+                  currency: hit.currencyCode,
+                  symbol: hit.currencySymbol
+                },
+                image: hit.photoPath,
+                lotNumber: hit.lotNumber,
+                saleType: hit.saleType
+              }));
+              
+              const standardizedResponse = {
+                data: {
+                  lots: formattedLots,
+                  totalResults: formattedLots.length
+                }
+              };
+              
+              try {
+                // Obtener instancia de navegador para descargar imágenes
+                const browserInstance = browser.getBrowser ? await browser.getBrowser() : null;
+                
+                // Descargar todas las imágenes
+                await searchStorage.saveAllImages(
+                  standardizedResponse,
+                  category,
+                  subcategory,
+                  browserInstance
+                );
+                console.log(`✅ Imágenes de la página ${pageNum} guardadas correctamente`);
+              } catch (imageError) {
+                console.error(`❌ Error al guardar imágenes para la página ${pageNum}: ${imageError.message}`);
+              }
+            }
+            
             // Guardar la página actual
             const pagePath = await searchStorage.savePageResults(category, pageNum, pageResults, subcategory);
             console.log(`✅ Página ${pageNum} guardada en GCS: ${pagePath}`);

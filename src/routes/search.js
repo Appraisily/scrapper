@@ -225,8 +225,20 @@ router.get('/', async (req, res) => {
     // Check if we should save to GCS
     const saveToGcs = req.query.saveToGcs === 'true';
     
+    // Check if we should save images
+    const saveImages = req.query.saveImages === 'true';
+    // Add saveImages to searchParams to pass to scraper
+    if (saveImages) {
+        searchParams.saveImages = 'true';
+    }
+    
     // Check for custom bucket name
     const customBucket = req.query.bucket;
+    // Add bucket to searchParams to pass to scraper
+    if (customBucket) {
+        searchParams.bucket = customBucket;
+    }
+    
     delete searchParams.saveToGcs;
     
     // Get category/search term for storage

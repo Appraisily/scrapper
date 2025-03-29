@@ -66,6 +66,12 @@ class InvaluableScraper {
 
     try {
       console.log('Iniciando búsqueda paginada para todos los resultados');
+      console.log('Parámetros de búsqueda paginada:', {
+        query: params.query,
+        saveImages: params.saveImages,
+        bucket: params.bucket,
+        maxPages
+      });
       
       // Obtener primera página
       const firstPageParams = { ...params, page: 1 };
@@ -77,6 +83,13 @@ class InvaluableScraper {
         return firstPageResults;
       }
       
+      // Configuración adicional para la paginación
+      const paginationConfig = {
+        ...this.config,
+        // Pasar parámetros de imágenes
+        saveImages: params.saveImages
+      };
+      
       // Procesar paginación completa
       return await handlePagination(
         this.browser,
@@ -84,7 +97,7 @@ class InvaluableScraper {
         firstPageResults,
         cookies,
         maxPages,
-        this.config
+        paginationConfig
       );
       
     } catch (error) {
