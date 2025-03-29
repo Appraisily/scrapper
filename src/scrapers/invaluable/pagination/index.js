@@ -218,13 +218,14 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
             // Determinar subcategoría si existe
             const subcategory = params.furnitureSubcategory || null;
             
-            // Verificar si debemos guardar imágenes (primero desde config, luego desde params)
+            // Check if we should download images
             const saveImages = (config.saveImages === 'true' || config.saveImages === true) || 
                               (params.saveImages === 'true' || params.saveImages === true);
             
             if (saveImages) {
-              console.log(`🖼️ Guardando también imágenes para la página ${pageNum}...`);
-              // Convertir pageResults a formato estándar para saveAllImages
+              console.log(`🖼️ Procesando imágenes para la página ${pageNum}...`);
+              
+              // Format page data into lots
               const formattedLots = pageResults.results[0].hits.map(hit => ({
                 title: hit.lotTitle,
                 date: hit.dateTimeLocal,
@@ -239,28 +240,52 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
                 saleType: hit.saleType
               }));
               
-              const standardizedResponse = {
-                data: {
-                  lots: formattedLots,
-                  totalResults: formattedLots.length
-                }
-              };
+              // Use moderate batch size for image downloads
+              const batchSize = 3; // Keep moderate batch size - will increase cloud resources instead
+              let successCount = 0;
               
-              try {
-                // Obtener instancia de navegador para descargar imágenes
-                const browserInstance = browser.getBrowser ? await browser.getBrowser() : null;
-                
-                // Descargar todas las imágenes
-                await searchStorage.saveAllImages(
-                  standardizedResponse,
-                  category,
-                  subcategory,
-                  browserInstance
-                );
-                console.log(`✅ Imágenes de la página ${pageNum} guardadas correctamente`);
-              } catch (imageError) {
-                console.error(`❌ Error al guardar imágenes para la página ${pageNum}: ${imageError.message}`);
+              for (let i = 0; i < formattedLots.length; i += batchSize) {
+                try {
+                  const batch = formattedLots.slice(i, i + batchSize);
+                  console.log(`Procesando lote de imágenes ${Math.floor(i/batchSize) + 1} de ${Math.ceil(formattedLots.length/batchSize)}`);
+                  
+                  // Process each batch in parallel
+                  await Promise.all(batch.map(async (lot, idx) => {
+                    const imageUrl = lot.image;
+                    const lotNumber = lot.lotNumber || `item_${i + idx}`;
+                    
+                    if (!imageUrl) {
+                      return;
+                    }
+                    
+                    try {
+                      // Use browser method via shared instance
+                      const gcsPath = await searchStorage.saveImage(
+                        imageUrl,
+                        category,
+                        lotNumber,
+                        subcategory,
+                        browser.getBrowser ? await browser.getBrowser() : null
+                      );
+                      
+                      if (gcsPath) {
+                        successCount++;
+                      }
+                    } catch (imgError) {
+                      console.error(`Error al guardar imagen para lote ${lotNumber}: ${imgError.message}`);
+                    }
+                  }));
+                  
+                  // Small delay between batches
+                  if (i + batchSize < formattedLots.length) {
+                    await wait(page, 500);
+                  }
+                } catch (batchError) {
+                  console.error(`Error procesando lote de imágenes ${Math.floor(i/batchSize) + 1}: ${batchError.message}`);
+                }
               }
+              
+              console.log(`✅ Procesadas ${successCount} imágenes de ${formattedLots.length} para la página ${pageNum}`);
             }
             
             // Guardar la página actual

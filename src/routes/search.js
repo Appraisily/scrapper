@@ -310,6 +310,75 @@ router.get('/', async (req, res) => {
                                 saveToGcs: 'true'
                             });
                             
+                            // Download images for initial page
+                            if (saveImages && standardizedResponse.data.lots.length > 0) {
+                                console.log(`Downloading images for first page (${standardizedResponse.data.lots.length} items)...`);
+                                try {
+                                    // Process images in smaller batches to avoid timeouts
+                                    const lots = standardizedResponse.data.lots;
+                                    const batchSize = 3; // Keep moderate batch size - will increase resources instead
+                                    let successCount = 0;
+                                    
+                                    for (let i = 0; i < lots.length; i += batchSize) {
+                                        const batch = lots.slice(i, i + batchSize);
+                                        console.log(`Processing first page image batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(lots.length/batchSize)}`);
+                                        
+                                        // Process batch in parallel
+                                        await Promise.all(batch.map(async (lot, idx) => {
+                                            const imageUrl = lot.image;
+                                            const lotNumber = lot.lotNumber || `item_${i + idx}`;
+                                            
+                                            if (!imageUrl) {
+                                                console.log(`No image URL for lot ${lotNumber}`);
+                                                return;
+                                            }
+                                            
+                                            try {
+                                                // Get the browser instance if possible
+                                                const storage = customBucket 
+                                                  ? new SearchStorageService({bucketName: customBucket}) 
+                                                  : searchStorage;
+                                                
+                                                // Try to get the browser instance
+                                                let browserInstance = null;
+                                                if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
+                                                    if (req.app.locals.invaluableScraper.browser.getBrowser) {
+                                                        browserInstance = await req.app.locals.invaluableScraper.browser.getBrowser();
+                                                    }
+                                                }
+                                                
+                                                const gcsPath = await storage.saveImage(
+                                                    imageUrl,
+                                                    category,
+                                                    lotNumber,
+                                                    searchParams.subcategory || null,
+                                                    browserInstance
+                                                );
+                                                
+                                                if (gcsPath) {
+                                                    lots[i + idx].imagePath = gcsPath;
+                                                    successCount++;
+                                                }
+                                            } catch (imgError) {
+                                                console.error(`Error saving image for lot ${lotNumber}: ${imgError.message}`);
+                                            }
+                                        }));
+                                        
+                                        // Small delay between batches
+                                        if (i + batchSize < lots.length) {
+                                            await new Promise(resolve => setTimeout(resolve, 500));
+                                        }
+                                    }
+                                    
+                                    console.log(`First page images processed: ${successCount} successful out of ${lots.length} total`);
+                                } catch (imageError) {
+                                    console.error("Error saving first page images:", imageError.message);
+                                }
+                                
+                                // In parallel, start downloading images for subsequent pages
+                                console.log("Will download images for additional pages after fetching all pages");
+                            }
+                            
                             await searchStorage.savePageResults(category, 1, standardizedResponse);
                             console.log(`Saved initial page results to GCS for category "${category}"`);
                         } catch (error) {
@@ -319,7 +388,15 @@ router.get('/', async (req, res) => {
                     
                     // Proceed with fetching all pages
                     console.log(`Fetching all pages (up to ${finalMaxPages})`);
-                    result = await invaluableScraper.searchAllPages(searchParams, cookies, finalMaxPages);
+                    const paginationParams = {...searchParams};
+                    
+                    // Make sure saveImages parameter is passed to the scraper
+                    if (saveImages) {
+                        console.log("Image downloading during pagination is enabled");
+                        paginationParams.saveImages = 'true';
+                    }
+                    
+                    result = await invaluableScraper.searchAllPages(paginationParams, cookies, finalMaxPages);
                 }
             } else {
                 console.warn('Could not determine total pages from API response, using default');
@@ -400,27 +477,63 @@ router.get('/', async (req, res) => {
         if (saveImages && standardizedResponse.data.lots.length > 0) {
           console.log(`Also saving ${standardizedResponse.data.lots.length} images...`);
           
-          // Try to get the browser instance from invaluableScraper if available
-          let existingBrowser = null;
-          if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
-            // Get the underlying browser instance if it exists
-            if (req.app.locals.invaluableScraper.browser.getBrowser) {
-              existingBrowser = await req.app.locals.invaluableScraper.browser.getBrowser();
-              console.log('Using existing browser instance from scraper');
-            } else {
-              console.log('Browser manager exists but getBrowser method not found');
-            }
-          }
-          
-          // Save all images and update response with image paths
+          // Process images in smaller batches to prevent timeouts
           try {
-            standardizedResponse = await storage.saveAllImages(
-              standardizedResponse, 
-              category,
-              searchParams.subcategory || null,
-              existingBrowser
-            );
-            console.log('Images saved successfully');
+            // Save in batches of 10 images
+            const lots = standardizedResponse.data.lots;
+            const batchSize = 10;
+            let successCount = 0;
+            
+            for (let i = 0; i < lots.length; i += batchSize) {
+              const batch = lots.slice(i, i + batchSize);
+              console.log(`Processing image batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(lots.length/batchSize)}`);
+              
+              // Create a mini standardized response with just this batch
+              const batchResponse = {
+                data: {
+                  lots: batch,
+                  totalResults: batch.length
+                }
+              };
+              
+              try {
+                // Try to get the browser instance to use
+                let browserInstance = null;
+                if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
+                  if (req.app.locals.invaluableScraper.browser.getBrowser) {
+                    browserInstance = await req.app.locals.invaluableScraper.browser.getBrowser();
+                    console.log('Using existing browser instance from scraper');
+                  }
+                }
+                
+                // Save images for this batch
+                const updatedBatch = await storage.saveAllImages(
+                  batchResponse,
+                  category,
+                  searchParams.subcategory || null,
+                  browserInstance
+                );
+                
+                // Update the original standardized response with image paths
+                if (updatedBatch && updatedBatch.data && updatedBatch.data.lots) {
+                  updatedBatch.data.lots.forEach((updatedLot, index) => {
+                    if (updatedLot.imagePath) {
+                      lots[i + index].imagePath = updatedLot.imagePath;
+                      successCount++;
+                    }
+                  });
+                }
+              } catch (batchError) {
+                console.error(`Error processing image batch ${Math.floor(i/batchSize) + 1}: ${batchError.message}`);
+              }
+              
+              // Add a small delay between batches
+              if (i + batchSize < lots.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
+            
+            console.log(`Images processed: ${successCount} successful out of ${lots.length} total`);
           } catch (imageError) {
             console.error('Error saving images:', imageError.message);
             // Continue with saving the JSON response even if image saving fails

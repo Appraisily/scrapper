@@ -38,12 +38,17 @@ class SearchStorageService {
     
     // HTTP client for image downloading (fallback only)
     this.httpClient = axios.create({
-      timeout: 10000, // 10 seconds timeout
+      timeout: 30000, // 30 seconds timeout (increased from 10s)
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
         'Referer': 'https://www.invaluable.com/',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
-      }
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'DNT': '1'
+      },
+      maxRedirects: 5
     });
     
     // Browser instance (will be initialized on demand)
@@ -277,7 +282,9 @@ class SearchStorageService {
         '--disable-accelerated-2d-canvas',
         '--disable-gpu',
         '--window-size=1280,720'
-      ]
+      ],
+      protocolTimeout: 60000, // Increase protocol timeout to 60 seconds
+      timeout: 60000 // Increase browser launch timeout
     });
     
     this.shouldCloseBrowser = true;
@@ -338,9 +345,23 @@ class SearchStorageService {
       // Initialize browser if needed
       await this.initBrowser(externalBrowser);
       
-      // Create a new page
+      // Reuse existing page if possible rather than creating new ones
       console.log(`Downloading image from ${url} using browser`);
-      const page = await this.browser.newPage();
+      let page;
+      try {
+        // Try to get an existing page
+        const pages = await this.browser.pages();
+        if (pages.length > 0) {
+          page = pages[0]; // Reuse the first available page
+          console.log("Reusing existing browser page");
+        } else {
+          page = await this.browser.newPage();
+          console.log("Created new browser page");
+        }
+      } catch (pageError) {
+        console.log("Error getting existing pages, creating new one:", pageError.message);
+        page = await this.browser.newPage();
+      }
       
       try {
         // Set viewport
@@ -375,10 +396,10 @@ class SearchStorageService {
           }
         });
         
-        // Navigate to the image URL
+        // Navigate to the image URL with increased timeout
         const response = await page.goto(url, {
           waitUntil: 'networkidle0',
-          timeout: 15000
+          timeout: 60000  // Increased from 15000 to 60000
         });
         
         // If we couldn't capture the buffer from the response event, try to get it directly
@@ -430,8 +451,13 @@ class SearchStorageService {
         console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
         return `gs://${this.bucketName}/${filePath}`;
       } finally {
-        // Close the page
-        await page.close();
+        // Don't close the page, we'll reuse it for future requests
+        // Just navigate to about:blank to clear resources
+        try {
+          await page.goto('about:blank', { waitUntil: 'networkidle0', timeout: 5000 });
+        } catch (clearError) {
+          // Ignore errors when navigating to about:blank
+        }
       }
     } catch (error) {
       console.error(`Error saving image: ${error.message}`);
@@ -448,7 +474,7 @@ class SearchStorageService {
   }
   
   /**
-   * Fallback method to download image using axios (only used if browser method fails)
+   * Fake fallback method that now just delegates to the browser method
    * @param {string} imageUrl - URL of the image to download
    * @param {string} category - Category/search term
    * @param {string} lotNumber - Lot number of the item
@@ -456,52 +482,11 @@ class SearchStorageService {
    * @returns {Promise<string>} - GCS file path where image was saved
    */
   async saveImageFallback(imageUrl, category, lotNumber, subcategory = null) {
-    try {
-      // Fix image URL if needed (ensure complete URL)
-      let url = imageUrl;
-      if (!url.startsWith('http')) {
-        // If it starts with a house name without the proper prefix
-        if (!url.startsWith('image.invaluable.com')) {
-          url = `https://image.invaluable.com/housePhotos/${url}`;
-        } else {
-          url = `https://${url}`;
-        }
-      }
-      
-      // Generate GCS file path for the image
-      const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
-      
-      // Check if image already exists in storage
-      const file = this.bucket.file(filePath);
-      const [exists] = await file.exists();
-      
-      if (exists) {
-        console.log(`Image already exists at gs://${this.bucketName}/${filePath}`);
-        return `gs://${this.bucketName}/${filePath}`;
-      }
-      
-      // Download image with proper headers
-      console.log(`Downloading image from ${url} using direct HTTP request`);
-      const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
-      
-      // Get content type from response
-      const contentType = response.headers['content-type'] || 'image/jpeg';
-      
-      // Save image to GCS
-      await file.save(response.data, {
-        contentType,
-        metadata: {
-          cacheControl: 'public, max-age=31536000', // Cache for 1 year
-          source: url
-        },
-      });
-      
-      console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
-      return `gs://${this.bucketName}/${filePath}`;
-    } catch (error) {
-      console.error(`Error in fallback image download: ${error.message}`);
-      return null;
-    }
+    // Initialize browser if needed
+    await this.initBrowser(null);
+    
+    // Just use the browser method since direct HTTP requests are failing
+    return this.saveImage(imageUrl, category, lotNumber, subcategory, this.browser);
   }
 
   /**
@@ -530,9 +515,9 @@ class SearchStorageService {
       // Process each lot in sequential batches with a concurrency limit
       const lots = resultsCopy.data.lots;
       
-      // Increased concurrency and reduced delay to optimize image downloading
-      const concurrencyLimit = 12; // Increased from 6 to 12 for faster processing
-      
+      // Use moderate concurrency that worked before
+      const concurrencyLimit = 3; // Keeping moderate concurrency - will increase cloud resources instead
+
       // Process in batches
       for (let i = 0; i < lots.length; i += concurrencyLimit) {
         const batch = lots.slice(i, i + concurrencyLimit);
@@ -572,8 +557,9 @@ class SearchStorageService {
         }));
         
         // Reduced delay between batches
+        // Simple delay between batches without resetting browser
         if (i + concurrencyLimit < lots.length) {
-          const delayMs = 500; // Reduced from 1500ms to 500ms
+          const delayMs = 500; // Keep normal delay
           console.log(`Waiting ${delayMs}ms before next batch...`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }

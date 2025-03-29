@@ -74,7 +74,9 @@ class BrowserManager {
           hasTouch: false,
           isLandscape: true,
           isMobile: false
-        }
+        },
+        protocolTimeout: 60000, // Increase protocol timeout to 60 seconds
+        timeout: 60000 // Increase browser launch timeout
       });
 
       this.page = await this.browser.newPage();
