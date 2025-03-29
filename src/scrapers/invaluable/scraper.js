@@ -59,7 +59,7 @@ class InvaluableScraper {
     }
   }
 
-  async searchAllPages(params = {}, cookies = [], maxPages = 10) {
+  async searchAllPages(params = {}, cookies = [], maxPages = 999) { // Increased default max pages
     if (!this.initialized) {
       throw new Error('Scraper no inicializado. Llame a initialize() primero');
     }

@@ -67,7 +67,7 @@ for KW in "${KEYWORDS[@]}"; do
   ENCODED_KW=$(echo "$KW" | tr ' ' '+')
   
   # Build URL with query parameters - include saveImages=true to download images
-  REQUEST_URL="$SERVICE_URL?query=$ENCODED_KW&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME"
+  REQUEST_URL="$SERVICE_URL?query=$ENCODED_KW&saveToGcs=true&saveImages=true&bucket=$BUCKET_NAME&fetchAllPages=true"
   
   echo "Request URL: $REQUEST_URL"
   

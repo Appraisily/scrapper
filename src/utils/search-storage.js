@@ -528,7 +528,7 @@ class SearchStorageService {
       await this.initBrowser(externalBrowser);
       
       // Process each lot in sequential batches with a concurrency limit
-      const concurrencyLimit = 2; // Lower concurrency to avoid Cloudflare issues
+      const concurrencyLimit = 6; // Increased concurrency for faster processing
       const lots = resultsCopy.data.lots;
       
       // Process in batches
