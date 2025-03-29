@@ -256,7 +256,7 @@ class SearchStorageService {
   }
 
   /**
-   * Initialize browser if it doesn't exist yet
+   * Initialize browser with environment-specific optimizations
    * @param {Object} externalBrowser - Optional external browser instance to use
    * @returns {Promise<Object>} - Puppeteer browser instance
    */
@@ -273,22 +273,60 @@ class SearchStorageService {
     }
     
     console.log('Initializing browser for image downloads...');
+    
+    // Detect environment and available resources
+    const isCloudRun = process.env.K_SERVICE ? true : false;
+    const maxMemoryGB = parseInt(process.env.MAX_MEMORY_GB || '4', 10);
+    
+    // Optimize browser configuration based on environment
+    const args = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--window-size=1280,720'
+    ];
+    
+    // Add additional optimizations for high-memory environments
+    if (maxMemoryGB >= 8) {
+      // Additional memory-related optimizations for higher resource environments
+      args.push(
+        '--js-flags=--expose-gc',
+        '--disable-features=site-per-process',
+        '--single-process', // Use single process for memory management
+        '--disable-field-trial-config', // Disable field trials to reduce memory
+        '--no-zygote' // Disable zygote process to reduce memory usage
+      );
+    }
+    
+    // Configure context size based on available memory
+    // Higher memory = more browser contexts for parallel processing
+    const maxContexts = Math.max(2, Math.min(8, Math.floor(maxMemoryGB / 2)));
+    args.push(`--max-active-webgl-contexts=${maxContexts}`);
+    
+    // Configure timeouts based on environment
+    // Cloud Run environments can have longer timeouts due to better stability
+    const protocolTimeout = isCloudRun ? 90000 : 60000; // 90 seconds in Cloud Run
+    const browserTimeout = isCloudRun ? 90000 : 60000; // 90 seconds in Cloud Run
+    
+    // Launch browser with optimized configuration
     this.browser = await puppeteer.launch({
       headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--disable-gpu',
-        '--window-size=1280,720'
-      ],
-      protocolTimeout: 60000, // Increase protocol timeout to 60 seconds
-      timeout: 60000 // Increase browser launch timeout
+      args,
+      protocolTimeout,
+      timeout: browserTimeout,
+      // Set default viewport based on most common image sizes
+      defaultViewport: {
+        width: 1280,
+        height: 960,
+        deviceScaleFactor: 1
+      }
     });
     
     this.shouldCloseBrowser = true;
-    console.log('Browser initialized successfully');
+    console.log('Browser initialized successfully with environment-specific optimizations');
+    console.log(`Browser configuration: Memory ${maxMemoryGB}GB, max contexts: ${maxContexts}, timeouts: ${protocolTimeout}ms`);
     return this.browser;
   }
   
@@ -305,7 +343,9 @@ class SearchStorageService {
   }
   
   /**
-   * Download an image using browser and save to GCS
+   * Download an image using browser with improved request handling
+   * This method uses a fresh page for each image to prevent request conflicts
+   * 
    * @param {string} imageUrl - URL of the image to download
    * @param {string} category - Category/search term
    * @param {string} lotNumber - Lot number of the item
@@ -345,84 +385,134 @@ class SearchStorageService {
       // Initialize browser if needed
       await this.initBrowser(externalBrowser);
       
-      // Reuse existing page if possible rather than creating new ones
+      // Always create a new page for each image to prevent request conflicts
       console.log(`Downloading image from ${url} using browser`);
-      let page;
-      try {
-        // Try to get an existing page
-        const pages = await this.browser.pages();
-        if (pages.length > 0) {
-          page = pages[0]; // Reuse the first available page
-          console.log("Reusing existing browser page");
-        } else {
-          page = await this.browser.newPage();
-          console.log("Created new browser page");
-        }
-      } catch (pageError) {
-        console.log("Error getting existing pages, creating new one:", pageError.message);
-        page = await this.browser.newPage();
-      }
+      const page = await this.browser.newPage();
       
       try {
-        // Set viewport
+        // Configure page
         await page.setViewport({ width: 1280, height: 720 });
-        
-        // Set extra headers
         await page.setExtraHTTPHeaders({
           'Referer': 'https://www.invaluable.com/',
-          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
         });
         
-        // Enable request interception to capture the image response
-        await page.setRequestInterception(true);
-        
+        // Prepare variables to store response data
         let imageBuffer = null;
         let contentType = 'image/jpeg';
         
-        // Listen for responses to capture the image data
-        page.on('request', request => {
-          request.continue();
-        });
-        
-        page.on('response', async response => {
-          if (response.url() === url && response.status() === 200) {
+        // First attempt: Try direct navigation without interception
+        try {
+          console.log(`Attempting direct navigation to image URL...`);
+          const response = await page.goto(url, {
+            waitUntil: 'networkidle0',
+            timeout: 30000
+          });
+          
+          if (response && response.status() === 200) {
             try {
               imageBuffer = await response.buffer();
               contentType = response.headers()['content-type'] || 'image/jpeg';
-              console.log(`Successfully captured image response: ${response.status()}, content-type: ${contentType}`);
-            } catch (err) {
-              console.error(`Error capturing response buffer: ${err.message}`);
+              console.log(`Successfully captured image via direct navigation`);
+            } catch (bufferError) {
+              console.log(`Error getting buffer from response: ${bufferError.message}`);
             }
           }
-        });
-        
-        // Navigate to the image URL with increased timeout
-        const response = await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: 60000  // Increased from 15000 to 60000
-        });
-        
-        // If we couldn't capture the buffer from the response event, try to get it directly
-        if (!imageBuffer && response && response.status() === 200) {
-          imageBuffer = await response.buffer();
-          contentType = response.headers()['content-type'] || 'image/jpeg';
-          console.log(`Captured image buffer directly from response`);
+        } catch (navError) {
+          console.log(`Navigation error: ${navError.message}`);
         }
         
-        // Check if we have image data
+        // Second attempt: Try request interception if direct navigation failed
         if (!imageBuffer) {
-          console.log(`Alternative method: trying to get image from page content...`);
+          console.log(`Trying with request interception...`);
+          
+          // Reset page
+          await page.goto('about:blank');
+          
+          // Set up request interception with proper handlers
+          await page.setRequestInterception(true);
+          
+          const requestHandler = (request) => {
+            if (request.resourceType() === 'image' || request.url() === url) {
+              // Continue the image request
+              request.continue();
+            } else if (['stylesheet', 'font', 'media'].includes(request.resourceType())) {
+              // Block unnecessary resources
+              request.abort();
+            } else {
+              // Continue other requests
+              request.continue();
+            }
+          };
+          
+          // Add event listener for requests
+          page.on('request', requestHandler);
+          
+          // Add event listener for responses
+          const responsePromise = new Promise((resolve) => {
+            page.once('response', async (response) => {
+              if (response.url() === url && response.status() === 200) {
+                try {
+                  const buffer = await response.buffer();
+                  const headers = response.headers();
+                  resolve({ buffer, contentType: headers['content-type'] || 'image/jpeg' });
+                } catch (err) {
+                  console.log(`Error in response handler: ${err.message}`);
+                  resolve(null);
+                }
+              } else {
+                resolve(null);
+              }
+            });
+          });
+          
+          // Navigate to the image URL
+          try {
+            await page.goto(url, { 
+              waitUntil: 'networkidle0',
+              timeout: 30000
+            });
+            
+            // Wait for response handler to complete
+            const responseData = await responsePromise;
+            if (responseData) {
+              imageBuffer = responseData.buffer;
+              contentType = responseData.contentType;
+              console.log(`Successfully captured image via interception`);
+            }
+            
+            // Remove the request handler to prevent memory leaks
+            page.removeListener('request', requestHandler);
+          } catch (navError) {
+            console.log(`Interception navigation error: ${navError.message}`);
+            // Remove the request handler
+            page.removeListener('request', requestHandler);
+          }
+        }
+        
+        // Third attempt: Try to extract from DOM if previous methods failed
+        if (!imageBuffer) {
+          console.log(`Trying to extract image from DOM...`);
+          
+          // Navigate to the image URL without interception
+          await page.setRequestInterception(false);
+          await page.goto(url, { timeout: 30000 });
           
           // Try to get the image as base64 from the page
           const base64Data = await page.evaluate(() => {
             const img = document.querySelector('img');
             if (img && img.complete) {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0);
-              return canvas.toDataURL('image/jpeg').replace(/^data:image\/jpeg;base64,/, '');
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || 300;
+                canvas.height = img.naturalHeight || 300;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                return canvas.toDataURL('image/jpeg').replace(/^data:image\/jpeg;base64,/, '');
+              } catch (e) {
+                return null;
+              }
             }
             return null;
           });
@@ -430,7 +520,47 @@ class SearchStorageService {
           if (base64Data) {
             imageBuffer = Buffer.from(base64Data, 'base64');
             contentType = 'image/jpeg';
-            console.log(`Successfully extracted image data from page`);
+            console.log(`Successfully extracted image from DOM`);
+          }
+        }
+        
+        // If we still don't have an image, try a direct XHR request from within the page
+        if (!imageBuffer) {
+          console.log(`Trying XHR request from within page...`);
+          
+          const xhrResult = await page.evaluate(async (imageUrl) => {
+            return new Promise((resolve) => {
+              const xhr = new XMLHttpRequest();
+              xhr.open('GET', imageUrl, true);
+              xhr.responseType = 'arraybuffer';
+              xhr.onload = function() {
+                if (this.status === 200) {
+                  const contentType = xhr.getResponseHeader('Content-Type') || 'image/jpeg';
+                  
+                  // Convert ArrayBuffer to Base64
+                  const uInt8Array = new Uint8Array(this.response);
+                  let binaryString = '';
+                  for (let i = 0; i < uInt8Array.length; i++) {
+                    binaryString += String.fromCharCode(uInt8Array[i]);
+                  }
+                  const base64 = btoa(binaryString);
+                  
+                  resolve({ success: true, data: base64, contentType });
+                } else {
+                  resolve({ success: false, error: `Status code: ${this.status}` });
+                }
+              };
+              xhr.onerror = function() {
+                resolve({ success: false, error: 'XHR request failed' });
+              };
+              xhr.send();
+            });
+          }, url);
+          
+          if (xhrResult && xhrResult.success) {
+            imageBuffer = Buffer.from(xhrResult.data, 'base64');
+            contentType = xhrResult.contentType;
+            console.log(`Successfully downloaded image via XHR`);
           }
         }
         
@@ -451,12 +581,11 @@ class SearchStorageService {
         console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
         return `gs://${this.bucketName}/${filePath}`;
       } finally {
-        // Don't close the page, we'll reuse it for future requests
-        // Just navigate to about:blank to clear resources
+        // Always close the page to free resources
         try {
-          await page.goto('about:blank', { waitUntil: 'networkidle0', timeout: 5000 });
-        } catch (clearError) {
-          // Ignore errors when navigating to about:blank
+          await page.close();
+        } catch (closeError) {
+          console.log(`Error closing page: ${closeError.message}`);
         }
       }
     } catch (error) {
@@ -474,7 +603,9 @@ class SearchStorageService {
   }
   
   /**
-   * Fake fallback method that now just delegates to the browser method
+   * Enhanced fallback method for image download
+   * Uses a completely different approach with axios with custom headers
+   * 
    * @param {string} imageUrl - URL of the image to download
    * @param {string} category - Category/search term
    * @param {string} lotNumber - Lot number of the item
@@ -482,15 +613,99 @@ class SearchStorageService {
    * @returns {Promise<string>} - GCS file path where image was saved
    */
   async saveImageFallback(imageUrl, category, lotNumber, subcategory = null) {
-    // Initialize browser if needed
-    await this.initBrowser(null);
-    
-    // Just use the browser method since direct HTTP requests are failing
-    return this.saveImage(imageUrl, category, lotNumber, subcategory, this.browser);
+    try {
+      // Fix image URL if needed (ensure complete URL)
+      let url = imageUrl;
+      if (!url.startsWith('http')) {
+        // If it starts with a house name without the proper prefix
+        if (!url.startsWith('image.invaluable.com')) {
+          url = `https://image.invaluable.com/housePhotos/${url}`;
+        } else {
+          url = `https://${url}`;
+        }
+      }
+      
+      // Generate GCS file path for the image
+      const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
+      
+      // Check if image already exists in storage
+      const file = this.bucket.file(filePath);
+      const [exists] = await file.exists();
+      
+      if (exists) {
+        console.log(`Image already exists at gs://${this.bucketName}/${filePath}`);
+        return `gs://${this.bucketName}/${filePath}`;
+      }
+      
+      // Download image with enhanced headers
+      console.log(`Downloading image from ${url} using enhanced HTTP request`);
+      
+      // Create a custom Axios instance with improved settings
+      const client = axios.create({
+        timeout: 60000, // 60 second timeout
+        maxRedirects: 5,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+          'Referer': 'https://www.invaluable.com/',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Connection': 'keep-alive',
+          'DNT': '1',
+          'Sec-Fetch-Dest': 'image',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': 'same-site'
+        },
+        responseType: 'arraybuffer'
+      });
+      
+      // Add random cookies to look like a browser
+      const cookies = [
+        `_ga=GA1.2.${Math.floor(Math.random() * 1000000000)}.${Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 10000000)}`,
+        `_gid=GA1.2.${Math.floor(Math.random() * 1000000000)}.${Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 100000)}`,
+        `_gat=1`,
+        `_invaluable_session=${Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)}`
+      ].join('; ');
+      
+      client.defaults.headers.common['Cookie'] = cookies;
+      
+      // Make the request
+      const response = await client.get(url);
+      
+      // Get content type from response
+      const contentType = response.headers['content-type'] || 'image/jpeg';
+      
+      // Save image to GCS
+      await file.save(response.data, {
+        contentType,
+        metadata: {
+          cacheControl: 'public, max-age=31536000', // Cache for 1 year
+          source: url
+        },
+      });
+      
+      console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
+      return `gs://${this.bucketName}/${filePath}`;
+    } catch (error) {
+      console.error(`Error in enhanced HTTP download: ${error.message}`);
+      
+      // Try using browser method as last resort
+      try {
+        console.log("Falling back to browser method for image download...");
+        await this.initBrowser(null);
+        return await this.saveImage(imageUrl, category, lotNumber, subcategory, this.browser);
+      } catch (browserError) {
+        console.error(`Browser fallback also failed: ${browserError.message}`);
+        return null;
+      }
+    }
   }
 
   /**
-   * Process and save images for search results
+   * Process and save images for search results with advanced error handling
+   * Uses controlled concurrency and multiple approaches for image downloading
+   * 
    * @param {Object} searchResults - Formatted search results
    * @param {string} category - Category/search term
    * @param {string} subcategory - Optional subcategory
@@ -515,63 +730,187 @@ class SearchStorageService {
       // Process each lot in sequential batches with a concurrency limit
       const lots = resultsCopy.data.lots;
       
-      // Use moderate concurrency that worked before
-      const concurrencyLimit = 3; // Keeping moderate concurrency - will increase cloud resources instead
-
-      // Process in batches
-      for (let i = 0; i < lots.length; i += concurrencyLimit) {
-        const batch = lots.slice(i, i + concurrencyLimit);
-        
-        console.log(`Processing batch ${Math.floor(i/concurrencyLimit) + 1} of ${Math.ceil(lots.length/concurrencyLimit)}`);
-        
-        // Process each batch in parallel
-        await Promise.all(batch.map(async (lot, index) => {
-          const currentIndex = i + index;
-          const imageUrl = lot.image;
-          
-          if (!imageUrl) {
-            console.log(`No image URL for lot ${lot.lotNumber || currentIndex}`);
-            return;
-          }
-          
-          // Log the original image URL format
-          console.log(`Processing image: ${imageUrl} for lot ${lot.lotNumber || currentIndex}`);
-          
-          try {
-            // Save the image and get the storage path - pass the browser instance
-            const gcsPath = await this.saveImage(
-              imageUrl, 
-              category, 
-              lot.lotNumber || `item_${currentIndex}`, 
-              subcategory,
-              this.browser // Reuse the same browser instance
-            );
-            
-            // Add the storage path to the lot data
-            if (gcsPath) {
-              lots[currentIndex].imagePath = gcsPath;
-            }
-          } catch (error) {
-            console.error(`Failed to save image for lot ${lot.lotNumber || currentIndex}: ${error.message}`);
-          }
-        }));
-        
-        // Reduced delay between batches
-        // Simple delay between batches without resetting browser
-        if (i + concurrencyLimit < lots.length) {
-          const delayMs = 500; // Keep normal delay
-          console.log(`Waiting ${delayMs}ms before next batch...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
+      // Use dynamic concurrency based on the available memory and environment
+      // This advanced configuration adapts to the deployment environment
+      const isCloudRun = process.env.K_SERVICE ? true : false; // Check if running in Cloud Run
+      
+      // Get environment-specific memory settings with improved defaults
+      const maxMemoryGB = parseInt(process.env.MAX_MEMORY_GB || '4', 10); // Default to 4GB
+      
+      // Calculate optimal concurrency based on environment and memory
+      // Cloud Run environments can handle higher concurrency due to better networking
+      // Local environments should be more conservative to avoid resource exhaustion
+      let concurrencyLimit;
+      
+      if (isCloudRun) {
+        // Cloud Run can handle more concurrent downloads:
+        // 2GB RAM = 3 concurrent downloads
+        // 4GB RAM = 6 concurrent downloads
+        // 8GB RAM = 10 concurrent downloads
+        // 16GB RAM = 16 concurrent downloads
+        concurrencyLimit = Math.min(Math.max(3, Math.floor(maxMemoryGB * 1.5)), 16);
+      } else {
+        // Local environment uses more conservative limits:
+        // 2GB RAM = 2 concurrent downloads
+        // 4GB RAM = 4 concurrent downloads
+        // 8GB RAM = 6 concurrent downloads
+        concurrencyLimit = Math.min(Math.max(2, Math.floor(maxMemoryGB)), 6);
+      }
+      
+      // Allow explicit override through environment variable
+      if (process.env.IMAGE_CONCURRENCY) {
+        const explicitLimit = parseInt(process.env.IMAGE_CONCURRENCY, 10);
+        if (!isNaN(explicitLimit) && explicitLimit > 0) {
+          concurrencyLimit = explicitLimit;
+          console.log(`Using explicitly configured concurrency limit: ${concurrencyLimit}`);
         }
       }
       
-      console.log(`Completed image processing for ${category}`);
+      console.log(`Using concurrency limit of ${concurrencyLimit} based on available memory (${maxMemoryGB}GB)`);
+
+      // Keep track of successes and failures
+      let successCount = 0;
+      let failureCount = 0;
+      let retryCount = 0;
+      
+      // Create a pool of tasks to process with controlled concurrency
+      const taskQueue = [];
+      
+      // Add all lots to the task queue
+      for (let i = 0; i < lots.length; i++) {
+        const lot = lots[i];
+        const imageUrl = lot.image;
+        
+        if (!imageUrl) {
+          console.log(`No image URL for lot ${lot.lotNumber || i}`);
+          continue;
+        }
+        
+        taskQueue.push({
+          index: i,
+          lot,
+          imageUrl,
+          lotNumber: lot.lotNumber || `item_${i}`,
+          retryCount: 0
+        });
+      }
+      
+      // Process the task queue with controlled concurrency
+      while (taskQueue.length > 0) {
+        // Take next batch of tasks
+        const batchTasks = taskQueue.splice(0, concurrencyLimit);
+        const batchNumber = Math.floor((successCount + failureCount) / concurrencyLimit) + 1;
+        
+        console.log(`Processing batch ${batchNumber} with ${batchTasks.length} images, ${taskQueue.length} remaining in queue`);
+        
+        // Process batch in parallel
+        const results = await Promise.allSettled(
+          batchTasks.map(async (task) => {
+            const { index, lot, imageUrl, lotNumber, retryCount } = task;
+            
+            console.log(`Processing image: ${imageUrl} for lot ${lotNumber} (attempt ${retryCount + 1})`);
+            
+            try {
+              // First try the primary browser-based method
+              const gcsPath = await this.saveImage(
+                imageUrl, 
+                category, 
+                lotNumber, 
+                subcategory,
+                this.browser
+              );
+              
+              if (gcsPath) {
+                lots[index].imagePath = gcsPath;
+                successCount++;
+                return { success: true, index, gcsPath };
+              } else {
+                throw new Error("saveImage returned null path");
+              }
+            } catch (error) {
+              // Log the error
+              console.error(`Error saving image for lot ${lotNumber}: ${error.message}`);
+              
+              // If retries remain, add back to queue
+              if (retryCount < 2) {
+                console.log(`Scheduling retry for image ${lotNumber} (attempt ${retryCount + 2})`);
+                taskQueue.push({
+                  ...task,
+                  retryCount: retryCount + 1
+                });
+                retryCount++;
+                return { success: false, retry: true, index };
+              } else {
+                // Mark as failed after max retries
+                failureCount++;
+                return { success: false, retry: false, index, error: error.message };
+              }
+            }
+          })
+        );
+        
+        // Log batch results
+        const batchSucceeded = results.filter(r => r.status === 'fulfilled' && r.value && r.value.success).length;
+        const batchRetried = results.filter(r => r.status === 'fulfilled' && r.value && !r.value.success && r.value.retry).length;
+        const batchFailed = results.filter(r => (r.status === 'rejected' || (r.status === 'fulfilled' && r.value && !r.value.success && !r.value.retry))).length;
+        
+        console.log(`Batch ${batchNumber} results: ${batchSucceeded} successful, ${batchRetried} scheduled for retry, ${batchFailed} failed`);
+        
+        // Delay between batches to prevent overwhelming the system
+        if (taskQueue.length > 0) {
+          const delayMs = 1000; // 1 second delay between batches
+          console.log(`Waiting ${delayMs}ms before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          
+          // Adaptively restart the browser to optimize memory usage
+          const totalProcessed = successCount + failureCount;
+          
+          // Calculate restart frequency based on environment and memory
+          // Higher memory = less frequent restarts
+          // Cloud Run = more aggressive memory management
+          const restartFrequency = isCloudRun 
+            ? Math.max(20, Math.min(50, 15 * maxMemoryGB))  // Cloud Run: between 20-50 images
+            : Math.max(30, Math.min(100, 25 * maxMemoryGB)); // Local: between 30-100 images
+          
+          if (totalProcessed > 0 && totalProcessed % restartFrequency === 0) {
+            try {
+              console.log(`Restarting browser to free memory (restart frequency: every ${restartFrequency} images)...`);
+              await this.closeBrowser();
+              
+              // Run garbage collection if available (Node.js with --expose-gc flag)
+              if (global.gc) {
+                console.log("Running garbage collection...");
+                global.gc();
+              }
+              
+              // Give system time to reclaim resources
+              const cooldownTime = isCloudRun ? 1000 : 2000; // Shorter cooldown in Cloud Run
+              await new Promise(resolve => setTimeout(resolve, cooldownTime));
+              
+              // Reinitialize browser
+              await this.initBrowser(externalBrowser);
+              console.log("Browser restarted successfully");
+            } catch (restartError) {
+              console.error(`Error restarting browser: ${restartError.message}`);
+            }
+          }
+        }
+      }
+      
+      // Log final statistics
+      console.log(`Image processing completed for ${category}`);
+      console.log(`Final results: ${successCount} successful, ${failureCount} failed, ${retryCount} retries`);
+      
       return resultsCopy;
     } finally {
-      // Close the browser if we created it
-      await this.closeBrowser();
+      try {
+        // Close the browser if we created it
+        await this.closeBrowser();
+      } catch (closeError) {
+        console.error(`Error closing browser: ${closeError.message}`);
+      }
     }
   }
 }
 
-module.exports = SearchStorageService; 
+module.exports = SearchStorageService;

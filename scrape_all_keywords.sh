@@ -10,10 +10,18 @@ INPUT_FILE="KWs.txt"
 PROGRESS_FILE="scrape_progress.txt"
 REMAINING_FILE="temp_remaining_keywords.txt"
 LOG_DIR="scrape_logs"
+
+# Timing and retry parameters
 REQUEST_DELAY=60 # Seconds to wait between attempts if service is unavailable
 MAX_RETRIES=5 # Maximum number of retries per keyword
 TIMEOUT=10800 # Maximum time (in seconds) to wait for a single keyword to complete (3 hours)
 MAX_WAIT_TIME=1800 # Maximum time (in seconds) to wait for service to become available again (30 minutes)
+
+# Resource configuration parameters (passed to the service)
+# These will be sent as URL parameters to configure the server-side behavior
+MAX_MEMORY_GB=${MAX_MEMORY_GB:-8} # Use environment variable or default to 8GB
+IMAGE_CONCURRENCY=${IMAGE_CONCURRENCY:-0} # Use environment variable or default to auto-calculation based on memory
+ENVIRONMENT=${ENVIRONMENT:-"cloud"} # Use environment variable or default to "cloud" (alternative: "local")
 
 # Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
