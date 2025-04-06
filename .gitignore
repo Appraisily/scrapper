@@ -1,1 +1,14 @@
 node_modules
+
+# Log files and temporary outputs
+*.log
+*.out
+*.har
+*_debug_*
+
+# Environment variables
+.env
+
+# OS generated files
+.DS_Store
+Thumbs.db

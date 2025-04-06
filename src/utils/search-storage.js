@@ -343,6 +343,68 @@ class SearchStorageService {
   }
   
   /**
+   * Log problematic images to GCS for later analysis
+   * @param {string} imageUrl - URL of the problematic image
+   * @param {string} category - Category/keyword being processed
+   * @param {string} lotNumber - Lot number of the item
+   * @param {string} subcategory - Optional subcategory
+   * @param {string} reason - Reason for skipping/failure
+   * @param {Object} additionalInfo - Any additional information to log
+   * @returns {Promise<void>}
+   */
+  async logProblematicImage(imageUrl, category, lotNumber, subcategory = null, reason = 'unknown', additionalInfo = {}) {
+    try {
+      // Generate log file path
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const sanitizedCategory = this.sanitizeName(category);
+      let logPath;
+      
+      if (subcategory) {
+        const sanitizedSubcategory = this.sanitizeName(subcategory);
+        logPath = `invaluable-data/${sanitizedCategory}/${sanitizedSubcategory}/problematic_images.jsonl`;
+      } else {
+        logPath = `invaluable-data/${sanitizedCategory}/problematic_images.jsonl`;
+      }
+      
+      // Create log entry
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        imageUrl,
+        category,
+        subcategory: subcategory || null,
+        lotNumber,
+        reason,
+        ...additionalInfo
+      };
+      
+      // Convert to JSON line format
+      const logLine = JSON.stringify(logEntry) + '\n';
+      
+      // Check if file exists first
+      const file = this.bucket.file(logPath);
+      const [exists] = await file.exists();
+      
+      if (exists) {
+        // Append to existing file
+        await file.append(logLine);
+      } else {
+        // Create new file
+        await file.save(logLine, {
+          contentType: 'application/json',
+          metadata: {
+            description: 'Log of problematic images encountered during scraping'
+          }
+        });
+      }
+      
+      console.log(`Logged problematic image to ${logPath}`);
+    } catch (error) {
+      // Don't let logging errors disrupt the main process
+      console.error(`Error logging problematic image: ${error.message}`);
+    }
+  }
+  
+  /**
    * Download an image using browser with improved request handling
    * This method uses a fresh page for each image to prevent request conflicts
    * 
@@ -368,6 +430,23 @@ class SearchStorageService {
         } else {
           url = `https://${url}`;
         }
+      }
+      
+      // Skip known problematic images
+      const problematicImages = [
+        'H0587-L73067353',
+        'H0587-L73067356'
+      ];
+      
+      // Check if this is a known problematic image
+      const isProblematic = problematicImages.some(problemId => url.includes(problemId));
+      if (isProblematic) {
+        console.log(`Skipping known problematic image: ${url}`);
+        
+        // Log the problematic image to GCS
+        await this.logProblematicImage(url, category, lotNumber, subcategory, 'blacklisted');
+        
+        return `skipped:${url}`;
       }
       
       // Generate GCS file path for the image
@@ -483,11 +562,27 @@ class SearchStorageService {
             }
             
             // Remove the request handler to prevent memory leaks
-            page.removeListener('request', requestHandler);
+            try {
+              if (page && typeof page.removeListener === 'function') {
+                page.removeListener('request', requestHandler);
+              } else {
+                console.log('Warning: page.removeListener is not available or not a function');
+              }
+            } catch (listenerError) {
+              console.log(`Warning: Error removing request listener: ${listenerError.message}`);
+            }
           } catch (navError) {
             console.log(`Interception navigation error: ${navError.message}`);
-            // Remove the request handler
-            page.removeListener('request', requestHandler);
+            // Remove the request handler with proper error handling
+            try {
+              if (page && typeof page.removeListener === 'function') {
+                page.removeListener('request', requestHandler);
+              } else {
+                console.log('Warning: page.removeListener is not available or not a function');
+              }
+            } catch (listenerError) {
+              console.log(`Warning: Error removing request listener: ${listenerError.message}`);
+            }
           }
         }
         
@@ -623,6 +718,23 @@ class SearchStorageService {
         } else {
           url = `https://${url}`;
         }
+      }
+      
+      // Skip known problematic images
+      const problematicImages = [
+        'H0587-L73067353',
+        'H0587-L73067356'
+      ];
+      
+      // Check if this is a known problematic image
+      const isProblematic = problematicImages.some(problemId => url.includes(problemId));
+      if (isProblematic) {
+        console.log(`Skipping known problematic image in fallback method: ${url}`);
+        
+        // Log the problematic image to GCS
+        await this.logProblematicImage(url, category, lotNumber, subcategory, 'blacklisted_fallback');
+        
+        return `skipped:${url}`;
       }
       
       // Generate GCS file path for the image
@@ -821,15 +933,42 @@ class SearchStorageService {
               );
               
               if (gcsPath) {
-                lots[index].imagePath = gcsPath;
-                successCount++;
-                return { success: true, index, gcsPath };
+                // Check if this is a skipped image
+                if (gcsPath.startsWith('skipped:')) {
+                  console.log(`Image was skipped: ${gcsPath}`);
+                  lots[index].imagePath = null;
+                  lots[index].imageSkipped = true;
+                  successCount++; // Count as success to avoid retries
+                  return { success: true, index, skipped: true };
+                } else {
+                  lots[index].imagePath = gcsPath;
+                  successCount++;
+                  return { success: true, index, gcsPath };
+                }
               } else {
                 throw new Error("saveImage returned null path");
               }
             } catch (error) {
               // Log the error
               console.error(`Error saving image for lot ${lotNumber}: ${error.message}`);
+              
+              // Log the failed image to GCS
+              try {
+                await this.logProblematicImage(
+                  imageUrl, 
+                  category, 
+                  lotNumber, 
+                  subcategory, 
+                  retryCount >= 2 ? 'max_retries_exceeded' : 'download_error',
+                  { 
+                    error: error.message,
+                    attempt: retryCount + 1,
+                    maxRetries: 2
+                  }
+                );
+              } catch (logError) {
+                console.error(`Failed to log problematic image: ${logError.message}`);
+              }
               
               // If retries remain, add back to queue
               if (retryCount < 2) {
