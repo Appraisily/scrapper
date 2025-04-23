@@ -436,8 +436,7 @@ class SearchStorageService {
   }
   
   /**
-   * Download an image using browser with improved request handling
-   * This method uses a fresh page for each image to prevent request conflicts
+   * This method uses a fresh page for each image to download and save it
    * 
    * @param {string} imageUrl - URL of the image to download
    * @param {string} category - Category/search term
@@ -494,6 +493,9 @@ class SearchStorageService {
       // Initialize browser if needed
       await this.initBrowser(externalBrowser);
       
+      // Reference to the GCS file for saving the image
+      const file = this.bucket.file(filePath);
+      
       // Always create a new page for each image to prevent request conflicts
       console.log(`Downloading image from ${url} using browser`);
       const page = await this.browser.newPage();
@@ -511,7 +513,7 @@ class SearchStorageService {
         let imageBuffer = null;
         let contentType = 'image/jpeg';
         
-        // First attempt: Try direct navigation without interception
+        // First attempt: Try direct navigation without interception - this is the most reliable method
         try {
           console.log(`Attempting direct navigation to image URL...`);
           const response = await page.goto(url, {
@@ -590,260 +592,59 @@ class SearchStorageService {
               contentType = responseData.contentType;
               console.log(`Successfully captured image via interception`);
             }
-            
-            // Remove the request handler to prevent memory leaks
-            try {
-              if (page && typeof page.removeListener === 'function') {
-                page.removeListener('request', requestHandler);
-              } else {
-                console.log('Warning: page.removeListener is not available or not a function');
-              }
-            } catch (listenerError) {
-              console.log(`Warning: Error removing request listener: ${listenerError.message}`);
-            }
           } catch (navError) {
             console.log(`Interception navigation error: ${navError.message}`);
-            // Remove the request handler with proper error handling
+          } finally {
+            // Clean up request interception to prevent memory leaks
             try {
+              await page.setRequestInterception(false);
               if (page && typeof page.removeListener === 'function') {
                 page.removeListener('request', requestHandler);
-              } else {
-                console.log('Warning: page.removeListener is not available or not a function');
               }
-            } catch (listenerError) {
-              console.log(`Warning: Error removing request listener: ${listenerError.message}`);
+            } catch (err) {
+              console.log(`Warning: Error cleaning up interception: ${err.message}`);
             }
           }
         }
         
-        // Third attempt: Try to extract from DOM if previous methods failed
-        if (!imageBuffer) {
-          console.log(`Trying to extract image from DOM...`);
-          
-          // Navigate to the image URL without interception
-          await page.setRequestInterception(false);
-          await page.goto(url, { timeout: 30000 });
-          
-          // Try to get the image as base64 from the page
-          const base64Data = await page.evaluate(() => {
-            const img = document.querySelector('img');
-            if (img && img.complete) {
-              try {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth || 300;
-                canvas.height = img.naturalHeight || 300;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                return canvas.toDataURL('image/jpeg').replace(/^data:image\/jpeg;base64,/, '');
-              } catch (e) {
-                return null;
-              }
-            }
-            return null;
+        // Save the image if we successfully got the buffer
+        if (imageBuffer) {
+          // Save the image to GCS
+          await file.save(imageBuffer, {
+            contentType,
+            metadata: {
+              cacheControl: 'public, max-age=31536000', // Cache for 1 year
+              source: url
+            },
           });
           
-          if (base64Data) {
-            imageBuffer = Buffer.from(base64Data, 'base64');
-            contentType = 'image/jpeg';
-            console.log(`Successfully extracted image from DOM`);
-          }
+          console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
+          return `gs://${this.bucketName}/${filePath}`;
+        } else {
+          // Log the failure
+          console.log(`Failed to download image from ${url}`);
+          await this.logProblematicImage(url, category, lotNumber, subcategory, 'download_failed');
+          return null;
         }
-        
-        // If we still don't have an image, try a direct XHR request from within the page
-        if (!imageBuffer) {
-          console.log(`Trying XHR request from within page...`);
-          
-          const xhrResult = await page.evaluate(async (imageUrl) => {
-            return new Promise((resolve) => {
-              const xhr = new XMLHttpRequest();
-              xhr.open('GET', imageUrl, true);
-              xhr.responseType = 'arraybuffer';
-              xhr.onload = function() {
-                if (this.status === 200) {
-                  const contentType = xhr.getResponseHeader('Content-Type') || 'image/jpeg';
-                  
-                  // Convert ArrayBuffer to Base64
-                  const uInt8Array = new Uint8Array(this.response);
-                  let binaryString = '';
-                  for (let i = 0; i < uInt8Array.length; i++) {
-                    binaryString += String.fromCharCode(uInt8Array[i]);
-                  }
-                  const base64 = btoa(binaryString);
-                  
-                  resolve({ success: true, data: base64, contentType });
-                } else {
-                  resolve({ success: false, error: `Status code: ${this.status}` });
-                }
-              };
-              xhr.onerror = function() {
-                resolve({ success: false, error: 'XHR request failed' });
-              };
-              xhr.send();
-            });
-          }, url);
-          
-          if (xhrResult && xhrResult.success) {
-            imageBuffer = Buffer.from(xhrResult.data, 'base64');
-            contentType = xhrResult.contentType;
-            console.log(`Successfully downloaded image via XHR`);
-          }
-        }
-        
-        // If we still don't have an image, throw an error
-        if (!imageBuffer) {
-          throw new Error(`Failed to download image: Could not capture image data`);
-        }
-        
-        // Save image to GCS
-        await file.save(imageBuffer, {
-          contentType,
-          metadata: {
-            cacheControl: 'public, max-age=31536000', // Cache for 1 year
-            source: url
-          },
-        });
-        
-        console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
-        return `gs://${this.bucketName}/${filePath}`;
+      } catch (error) {
+        console.error(`Error saving image: ${error.message}`);
+        // Log the error
+        await this.logProblematicImage(url, category, lotNumber, subcategory, 'error', { errorMessage: error.message });
+        return null;
       } finally {
         // Always close the page to free resources
         try {
-          await page.close();
-        } catch (closeError) {
-          console.log(`Error closing page: ${closeError.message}`);
+          if (page) await page.close();
+        } catch (error) {
+          console.log(`Warning: Error closing page: ${error.message}`);
         }
       }
-    } catch (error) {
-      console.error(`Error saving image: ${error.message}`);
-      
-      // Try fallback to direct HTTP request if browser method fails
-      try {
-        console.log(`Trying fallback method with direct HTTP request...`);
-        return await this.saveImageFallback(imageUrl, category, lotNumber, subcategory);
-      } catch (fallbackError) {
-        console.error(`Fallback method also failed: ${fallbackError.message}`);
-        return null;
-      }
+    } catch (outerError) {
+      console.error(`Unexpected error in saveImage: ${outerError.message}`);
+      return null;
     }
   }
   
-  /**
-   * Enhanced fallback method for image download
-   * Uses a completely different approach with axios with custom headers
-   * 
-   * @param {string} imageUrl - URL of the image to download
-   * @param {string} category - Category/search term
-   * @param {string} lotNumber - Lot number of the item
-   * @param {string} subcategory - Optional subcategory
-   * @returns {Promise<string>} - GCS file path where image was saved
-   */
-  async saveImageFallback(imageUrl, category, lotNumber, subcategory = null) {
-    try {
-      // Fix image URL if needed (ensure complete URL)
-      let url = imageUrl;
-      if (!url.startsWith('http')) {
-        // If it starts with a house name without the proper prefix
-        if (!url.startsWith('image.invaluable.com')) {
-          url = `https://image.invaluable.com/housePhotos/${url}`;
-        } else {
-          url = `https://${url}`;
-        }
-      }
-      
-      // Skip known problematic images
-      const problematicImages = [
-        'H0587-L73067353',
-        'H0587-L73067356'
-      ];
-      
-      // Check if this is a known problematic image
-      const isProblematic = problematicImages.some(problemId => url.includes(problemId));
-      if (isProblematic) {
-        console.log(`Skipping known problematic image in fallback method: ${url}`);
-        
-        // Log the problematic image to GCS
-        await this.logProblematicImage(url, category, lotNumber, subcategory, 'blacklisted_fallback');
-        
-        return `skipped:${url}`;
-      }
-      
-      // Generate GCS file path for the image
-      const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
-      
-      // Check if image already exists in storage
-      const file = this.bucket.file(filePath);
-      const [exists] = await file.exists();
-      
-      if (exists) {
-        console.log(`Image already exists at gs://${this.bucketName}/${filePath}`);
-        return `gs://${this.bucketName}/${filePath}`;
-      }
-      
-      // Download image with enhanced headers
-      console.log(`Downloading image from ${url} using enhanced HTTP request`);
-      
-      // Create a custom Axios instance with improved settings
-      const client = axios.create({
-        timeout: 60000, // 60 second timeout
-        maxRedirects: 5,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-          'Referer': 'https://www.invaluable.com/',
-          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Connection': 'keep-alive',
-          'DNT': '1',
-          'Sec-Fetch-Dest': 'image',
-          'Sec-Fetch-Mode': 'no-cors',
-          'Sec-Fetch-Site': 'same-site'
-        },
-        responseType: 'arraybuffer'
-      });
-      
-      // Add random cookies to look like a browser
-      const cookies = [
-        `_ga=GA1.2.${Math.floor(Math.random() * 1000000000)}.${Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 10000000)}`,
-        `_gid=GA1.2.${Math.floor(Math.random() * 1000000000)}.${Math.floor(Date.now() / 1000) - Math.floor(Math.random() * 100000)}`,
-        `_gat=1`,
-        `_invaluable_session=${Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)}`
-      ].join('; ');
-      
-      client.defaults.headers.common['Cookie'] = cookies;
-      
-      // Make the request
-      const response = await client.get(url);
-      
-      // Get content type from response
-      const contentType = response.headers['content-type'] || 'image/jpeg';
-      
-      // Save image to GCS
-      await file.save(response.data, {
-        contentType,
-        metadata: {
-          cacheControl: 'public, max-age=31536000', // Cache for 1 year
-          source: url
-        },
-      });
-      
-      console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
-      return `gs://${this.bucketName}/${filePath}`;
-    } catch (error) {
-      console.error(`Error in enhanced HTTP download: ${error.message}`);
-      
-      // Try using browser method as last resort
-      try {
-        console.log("Falling back to browser method for image download...");
-        await this.initBrowser(null);
-        return await this.saveImage(imageUrl, category, lotNumber, subcategory, this.browser);
-      } catch (browserError) {
-        console.error(`Browser fallback also failed: ${browserError.message}`);
-        return null;
-      }
-    }
-  }
-
   /**
    * Process and save images for search results with advanced error handling
    * Uses controlled concurrency and multiple approaches for image downloading
