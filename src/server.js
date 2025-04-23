@@ -4,7 +4,7 @@ const path = require('path');
 const searchRouter = require('./routes/search');
 const scraperRouter = require('./routes/scraper');
 const generalScraperRouter = require('./routes/general-scraper');
-const InvaluableScraper = require('./scrapers/invaluable');
+const { InvaluableScraper } = require('./scrapers/invaluable');
 
 const port = process.env.PORT || 8080;
 const app = express();

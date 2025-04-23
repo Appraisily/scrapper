@@ -76,7 +76,7 @@ router.get('/scrape', async (req, res) => {
       [
         {
           name: 'AZTOKEN-PROD',
-          value: req.query.aztoken || '60E0351A-C64E-4D9F-AA6C-5967BBBF859B',
+          value: req.query.aztoken || '1CA056EF-FA81-41E5-A17D-9BAF5700CB29',
           domain: '.invaluable.com'
         },
         {

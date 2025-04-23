@@ -197,7 +197,7 @@ router.get('/', async (req, res) => {
       [
         {
           name: 'AZTOKEN-PROD',
-          value: req.query.aztoken || '60E0351A-C64E-4D9F-AA6C-5967BBBF859B',
+          value: req.query.aztoken || '1CA056EF-FA81-41E5-A17D-9BAF5700CB29',
           domain: '.invaluable.com'
         },
         {
@@ -423,15 +423,10 @@ router.get('/', async (req, res) => {
                     result = await invaluableScraper.searchAllPages(paginationParams, cookies, finalMaxPages);
                 }
             } else {
-                console.warn('Could not determine total pages from API response, using default');
-                finalMaxPages = 10; // Default if metadata not available
+                // Use user-specified maxPages
+                finalMaxPages = maxPages;
                 console.log(`Fetching all pages (up to ${finalMaxPages})`);
                 result = await invaluableScraper.searchAllPages(searchParams, cookies, finalMaxPages);
-                
-                console.error('Failed to find pagination metadata. Response keys available:', 
-                    Object.keys(initialResult || {}).join(', '));
-                console.debug('API response structure: ' + 
-                    JSON.stringify(initialResult, null, 2).substring(0, 500) + '...');
             }
         } else {
             // Use user-specified maxPages

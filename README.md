@@ -39,6 +39,13 @@ A powerful Node.js application for scraping auction data from Invaluable with re
   - Direct API data submission endpoint
   - Batch processing of multiple requests
 
+- **Artist List Scraper (New)**
+  - Comprehensive collection of artist data from A to C
+  - Alphabetical navigation through nested sub-letter pages
+  - Extraction of artist names and URLs
+  - Multiple output formats (JSON, TXT)
+  - Progress tracking and resumable operation
+
 ## API Endpoints
 
 ### Main Search
@@ -221,3 +228,32 @@ curl "http://localhost:8080/api/search?query=furniture&saveImages=true&maxMemory
 ## License
 
 MIT License
+
+## Specialized Scrapers
+
+### Artist List Scraper
+
+A dedicated scraper for collecting artist data from Invaluable's artist directory.
+
+**Features:**
+- Scrapes artist names and URLs from letters A to C
+- Handles alphabetical navigation through sub-letter pages (Aa, Ab, Ac, etc.)
+- Saves progress during execution in case of interruptions
+- Creates multiple output formats (JSON, TXT)
+
+**Usage:**
+```bash
+# On Windows
+.\scrape_artists.ps1
+
+# On Linux/Mac
+./scrape_artists.sh
+```
+
+**Output:**
+The scraper creates the following files in `src/scrapers/invaluable/artist-list/output/`:
+- `artists_A_to_C.json` - Complete data with names and URLs
+- `artists_A_to_C_names.txt` - Text file with names only
+- `artists_A_to_C_with_urls.txt` - Tab-separated file with names and URLs
+
+For more details, see the [Artist List Scraper README](src/scrapers/invaluable/artist-list/README.md).
