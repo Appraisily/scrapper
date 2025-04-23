@@ -32,6 +32,17 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Invaluable Search API is running' });
 });
 
+// Add shutdown endpoint without authentication
+app.post('/admin/shutdown', (req, res) => {
+  res.json({ status: 'ok', message: 'Shutdown initiated' });
+  
+  // Delay shutdown to allow response to be sent
+  console.log('Shutdown requested via admin endpoint');
+  setTimeout(() => {
+    shutdown();
+  }, 1000);
+});
+
 // Serve client interceptor tool
 app.use(express.static(path.join(__dirname, '../public')));
 
