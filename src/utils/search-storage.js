@@ -14,10 +14,10 @@ puppeteer.use(StealthPlugin());
 class SearchStorageService {
   constructor(options = {}) {
     // Use STORAGE_BUCKET environment variable, or the provided bucket name, 
-    // or the hardcoded fallback value
+    // or use "invaluable-html-archive-images" as the hardcoded fallback value
     this.bucketName = process.env.STORAGE_BUCKET || 
                       options.bucketName || 
-                      'invaluable-html-archive';
+                      'invaluable-html-archive-images';
     
     console.log(`Using GCS bucket: ${this.bucketName}`);
     
@@ -186,9 +186,40 @@ class SearchStorageService {
     try {
       const file = this.bucket.file(filePath);
       const [exists] = await file.exists();
+      if (exists) {
+        console.log(`Page results already exist: gs://${this.bucketName}/${filePath}`);
+      }
       return exists;
     } catch (error) {
       console.error(`Error checking if page results exist: ${error.message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Check if image exists in GCS
+   * @param {string} category - Category/search term used (keyword folder)
+   * @param {string} lotNumber - Lot number for the image
+   * @param {string} subcategory - Optional subcategory name (query subfolder)
+   * @param {string} imageUrl - URL of the image
+   * @returns {Promise<boolean>} - Whether the image exists
+   */
+  async imageExists(category, lotNumber, subcategory = null, imageUrl) {
+    if (!category || !lotNumber) {
+      return false;
+    }
+    
+    const filePath = this.getImageFilePath(category, subcategory, lotNumber, imageUrl);
+    
+    try {
+      const file = this.bucket.file(filePath);
+      const [exists] = await file.exists();
+      if (exists) {
+        console.log(`Image already exists: gs://${this.bucketName}/${filePath}`);
+      }
+      return exists;
+    } catch (error) {
+      console.error(`Error checking if image exists: ${error.message}`);
       return false;
     }
   }
@@ -417,7 +448,8 @@ class SearchStorageService {
    */
   async saveImage(imageUrl, category, lotNumber, subcategory = null, externalBrowser = null) {
     if (!imageUrl || !category || !lotNumber) {
-      throw new Error('Image URL, category, and lot number are required for storing images');
+      console.warn('Missing required parameters for saving image');
+      return null;
     }
 
     try {
@@ -452,12 +484,10 @@ class SearchStorageService {
       // Generate GCS file path for the image
       const filePath = this.getImageFilePath(category, subcategory, lotNumber, url);
       
-      // Check if image already exists in storage
-      const file = this.bucket.file(filePath);
-      const [exists] = await file.exists();
-      
-      if (exists) {
-        console.log(`Image already exists at gs://${this.bucketName}/${filePath}`);
+      // Check if image already exists in storage using the dedicated method
+      const imageAlreadyExists = await this.imageExists(category, lotNumber, subcategory, url);
+      if (imageAlreadyExists) {
+        // Return the path of the existing image
         return `gs://${this.bucketName}/${filePath}`;
       }
       
