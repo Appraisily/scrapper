@@ -2,7 +2,7 @@ const BrowserManager = require('./browser');
 const { constructSearchUrl } = require('./url-builder');
 const { formatCookies, extractMetadata } = require('./utils');
 const { handleSearch } = require('./search-handler');
-const { handlePagination } = require('./pagination-handler');
+const { handlePagination } = require('./pagination/index');
 
 class InvaluableScraper {
   constructor() {

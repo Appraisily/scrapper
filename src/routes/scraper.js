@@ -5,7 +5,7 @@ const express = require('express');
 const router = express.Router();
 const BrowserManager = require('../scrapers/invaluable/browser');
 const { buildSearchParams } = require('../scrapers/invaluable/utils');
-const { handleFirstPage } = require('../scrapers/invaluable/pagination');
+const { handleFirstPage } = require('../scrapers/invaluable/pagination/index');
 const PaginationManager = require('../scrapers/invaluable/pagination/pagination-manager');
 
 // Endpoint to start a scraping job
