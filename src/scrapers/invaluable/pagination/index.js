@@ -156,7 +156,7 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
           console.log('Solicitando información de sesión...');
           const sessionInfoResponse = await requestSessionInfo(page, navState);
           if (sessionInfoResponse) {
-            console.log('Información de sesión actualizada correctamente');
+            // Reduced logging
           }
         } catch (sessionError) {
           console.warn(`⚠️ Error al obtener información de sesión: ${sessionError.message}`);
@@ -167,8 +167,7 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
         try {
           await wait(page, 500 + Math.random() * 500);
         } catch (waitError) {
-          console.warn(`⚠️ Error al esperar entre solicitudes: ${waitError.message}`);
-          // Continuamos a pesar del error
+          // Silent wait error
         }
         
         // Solicitar resultados de la página actual
@@ -223,7 +222,8 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
                               (params.saveImages === 'true' || params.saveImages === true);
             
             if (saveImages) {
-              console.log(`🖼️ Procesando imágenes para la página ${pageNum}...`);
+              // Simplified image processing log
+              const imageCount = pageResults.results[0].hits.length;
               
               // Format page data into lots
               const formattedLots = pageResults.results[0].hits.map(hit => ({
@@ -243,11 +243,18 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
               // Use moderate batch size for image downloads
               const batchSize = 3; // Keep moderate batch size - will increase cloud resources instead
               let successCount = 0;
+              let totalBatches = Math.ceil(formattedLots.length/batchSize);
+              
+              // Log only once at the start
+              console.log(`Procesando ${formattedLots.length} imágenes en ${totalBatches} lotes...`);
               
               for (let i = 0; i < formattedLots.length; i += batchSize) {
                 try {
                   const batch = formattedLots.slice(i, i + batchSize);
-                  console.log(`Procesando lote de imágenes ${Math.floor(i/batchSize) + 1} de ${Math.ceil(formattedLots.length/batchSize)}`);
+                  // Reduced batch logging - only log every 5th batch for large collections
+                  if (totalBatches > 10 && (Math.floor(i/batchSize) + 1) % 5 === 0) {
+                    console.log(`Procesando lote de imágenes ${Math.floor(i/batchSize) + 1} de ${totalBatches}`);
+                  }
                   
                   // Process each batch in parallel
                   await Promise.all(batch.map(async (lot, idx) => {
@@ -272,7 +279,7 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
                         successCount++;
                       }
                     } catch (imgError) {
-                      console.error(`Error al guardar imagen para lote ${lotNumber}: ${imgError.message}`);
+                      // Silently log image errors to reduce console spam
                     }
                   }));
                   
@@ -285,7 +292,10 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
                 }
               }
               
-              console.log(`✅ Procesadas ${successCount} imágenes de ${formattedLots.length} para la página ${pageNum}`);
+              // Simplified success message
+              if (successCount > 0) {
+                console.log(`✅ Procesadas ${successCount} imágenes de ${formattedLots.length} para la página ${pageNum}`);
+              }
             }
             
             // Guardar la página actual
@@ -346,7 +356,7 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
             console.log(`⏱️ Esperando ${pagePauseTime}ms antes de procesar la siguiente página...`);
             await wait(page, pagePauseTime);
           } catch (waitError) {
-            console.warn(`⚠️ Error en la pausa entre páginas: ${waitError.message}`);
+            // Silent wait error
           }
         } else {
           console.error(`❌ Error al procesar la página ${pageNum}: formato de respuesta inválido`);
@@ -423,8 +433,6 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
  */
 async function requestSessionInfo(page, navState) {
   try {
-    console.log('Solicitando información de sesión...');
-    
     const url = `${API_BASE_URL}${SESSION_INFO_ENDPOINT}`;
     const headers = buildRequestHeaders(navState.cookies);
     
@@ -469,7 +477,6 @@ async function requestPageResults(page, pageNum, params, navState) {
     
     // Construir payload para la solicitud
     const payload = buildResultsPayload(params, pageNum, navState);
-    console.log('Payload de solicitud:', JSON.stringify(payload));
     
     // Construir headers
     const headers = buildRequestHeaders(navState.cookies);
@@ -480,7 +487,6 @@ async function requestPageResults(page, pageNum, params, navState) {
     
     // Si falla con URL absoluta, intentar con URL relativa
     if (response && response.error) {
-      console.log('Intentando con URL relativa...');
       url = CAT_RESULTS_ENDPOINT;
       response = await makeApiRequest(page, url, headers, payload);
     }
@@ -490,7 +496,6 @@ async function requestPageResults(page, pageNum, params, navState) {
       console.log(`✅ Obtenidos ${response.results[0].hits.length} resultados para la página ${pageNum}`);
       return response;
     } else {
-      console.error(`Error en la respuesta:`, response);
       return null;
     }
   } catch (error) {

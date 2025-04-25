@@ -19,19 +19,15 @@ class SearchStorageService {
                       options.bucketName || 
                       'invaluable-html-archive-images';
     
-    console.log(`Using GCS bucket: ${this.bucketName}`);
-    
     // Initialize Storage with provided credentials or use default
     if (options.credentials) {
       // Use explicitly provided credentials
       this.storage = new Storage({ 
         credentials: options.credentials 
       });
-      console.log('Using provided GCS credentials for SearchStorageService');
     } else {
       // Use application default credentials or GOOGLE_APPLICATION_CREDENTIALS
       this.storage = new Storage();
-      console.log('Using application default credentials for SearchStorageService');
     }
     
     this.bucket = this.storage.bucket(this.bucketName);
@@ -56,6 +52,9 @@ class SearchStorageService {
     
     // Track if we need to close the browser when done
     this.shouldCloseBrowser = false;
+    
+    // Track existing images count for batch logging
+    this.existingImagesCount = 0;
   }
   
   /**
@@ -119,7 +118,6 @@ class SearchStorageService {
   async folderExists(keyword, query = null) {
     try {
       const folderPath = this.getFolderPath(keyword, query);
-      console.log(`Checking if folder exists: gs://${this.bucketName}/${folderPath}`);
       
       // In GCS, folders are virtual, so we check for any objects with the prefix
       const [files] = await this.bucket.getFiles({
@@ -128,7 +126,6 @@ class SearchStorageService {
       });
       
       const exists = files.length > 0;
-      console.log(`Folder ${folderPath} ${exists ? 'exists' : 'does not exist'} in GCS`);
       return exists;
     } catch (error) {
       console.error(`Error checking if folder exists: ${error.message}`);
@@ -215,7 +212,12 @@ class SearchStorageService {
       const file = this.bucket.file(filePath);
       const [exists] = await file.exists();
       if (exists) {
-        console.log(`Image already exists: gs://${this.bucketName}/${filePath}`);
+        // Count existing images instead of logging each one
+        this.existingImagesCount++;
+        // Only log every 10th image to reduce spam
+        if (this.existingImagesCount % 10 === 0) {
+          console.log(`Found ${this.existingImagesCount} existing images so far`);
+        }
       }
       return exists;
     } catch (error) {
@@ -293,7 +295,6 @@ class SearchStorageService {
    */
   async initBrowser(externalBrowser = null) {
     if (externalBrowser) {
-      console.log('Using provided external browser instance');
       this.browser = externalBrowser;
       this.shouldCloseBrowser = false;
       return this.browser;
@@ -302,8 +303,6 @@ class SearchStorageService {
     if (this.browser) {
       return this.browser;
     }
-    
-    console.log('Initializing browser for image downloads...');
     
     // Detect environment and available resources
     const isCloudRun = process.env.K_SERVICE ? true : false;
@@ -356,8 +355,6 @@ class SearchStorageService {
     });
     
     this.shouldCloseBrowser = true;
-    console.log('Browser initialized successfully with environment-specific optimizations');
-    console.log(`Browser configuration: Memory ${maxMemoryGB}GB, max contexts: ${maxContexts}, timeouts: ${protocolTimeout}ms`);
     return this.browser;
   }
   
@@ -366,10 +363,8 @@ class SearchStorageService {
    */
   async closeBrowser() {
     if (this.browser && this.shouldCloseBrowser) {
-      console.log('Closing browser...');
       await this.browser.close();
       this.browser = null;
-      console.log('Browser closed');
     }
   }
   
@@ -427,8 +422,6 @@ class SearchStorageService {
           }
         });
       }
-      
-      console.log(`Logged problematic image to ${logPath}`);
     } catch (error) {
       // Don't let logging errors disrupt the main process
       console.error(`Error logging problematic image: ${error.message}`);
@@ -447,7 +440,6 @@ class SearchStorageService {
    */
   async saveImage(imageUrl, category, lotNumber, subcategory = null, externalBrowser = null) {
     if (!imageUrl || !category || !lotNumber) {
-      console.warn('Missing required parameters for saving image');
       return null;
     }
 
@@ -472,8 +464,6 @@ class SearchStorageService {
       // Check if this is a known problematic image
       const isProblematic = problematicImages.some(problemId => url.includes(problemId));
       if (isProblematic) {
-        console.log(`Skipping known problematic image: ${url}`);
-        
         // Log the problematic image to GCS
         await this.logProblematicImage(url, category, lotNumber, subcategory, 'blacklisted');
         
@@ -497,7 +487,6 @@ class SearchStorageService {
       const file = this.bucket.file(filePath);
       
       // Always create a new page for each image to prevent request conflicts
-      console.log(`Downloading image from ${url} using browser`);
       const page = await this.browser.newPage();
       
       try {
@@ -515,7 +504,6 @@ class SearchStorageService {
         
         // First attempt: Try direct navigation without interception - this is the most reliable method
         try {
-          console.log(`Attempting direct navigation to image URL...`);
           const response = await page.goto(url, {
             waitUntil: 'networkidle0',
             timeout: 30000
@@ -525,19 +513,16 @@ class SearchStorageService {
             try {
               imageBuffer = await response.buffer();
               contentType = response.headers()['content-type'] || 'image/jpeg';
-              console.log(`Successfully captured image via direct navigation`);
             } catch (bufferError) {
-              console.log(`Error getting buffer from response: ${bufferError.message}`);
+              // Silent error - will try second approach
             }
           }
         } catch (navError) {
-          console.log(`Navigation error: ${navError.message}`);
+          // Silent navigation error - will try second approach
         }
         
         // Second attempt: Try request interception if direct navigation failed
         if (!imageBuffer) {
-          console.log(`Trying with request interception...`);
-          
           // Reset page
           await page.goto('about:blank');
           
@@ -569,7 +554,6 @@ class SearchStorageService {
                   const headers = response.headers();
                   resolve({ buffer, contentType: headers['content-type'] || 'image/jpeg' });
                 } catch (err) {
-                  console.log(`Error in response handler: ${err.message}`);
                   resolve(null);
                 }
               } else {
@@ -590,10 +574,9 @@ class SearchStorageService {
             if (responseData) {
               imageBuffer = responseData.buffer;
               contentType = responseData.contentType;
-              console.log(`Successfully captured image via interception`);
             }
           } catch (navError) {
-            console.log(`Interception navigation error: ${navError.message}`);
+            // Silent navigation error
           } finally {
             // Clean up request interception to prevent memory leaks
             try {
@@ -602,7 +585,7 @@ class SearchStorageService {
                 page.removeListener('request', requestHandler);
               }
             } catch (err) {
-              console.log(`Warning: Error cleaning up interception: ${err.message}`);
+              // Silent cleanup error
             }
           }
         }
@@ -618,16 +601,13 @@ class SearchStorageService {
             },
           });
           
-          console.log(`Image saved to gs://${this.bucketName}/${filePath}`);
           return `gs://${this.bucketName}/${filePath}`;
         } else {
           // Log the failure
-          console.log(`Failed to download image from ${url}`);
           await this.logProblematicImage(url, category, lotNumber, subcategory, 'download_failed');
           return null;
         }
       } catch (error) {
-        console.error(`Error saving image: ${error.message}`);
         // Log the error
         await this.logProblematicImage(url, category, lotNumber, subcategory, 'error', { errorMessage: error.message });
         return null;
@@ -636,7 +616,7 @@ class SearchStorageService {
         try {
           if (page) await page.close();
         } catch (error) {
-          console.log(`Warning: Error closing page: ${error.message}`);
+          // Silent page close error
         }
       }
     } catch (outerError) {
@@ -657,11 +637,11 @@ class SearchStorageService {
    */
   async saveAllImages(searchResults, category, subcategory = null, externalBrowser = null) {
     if (!searchResults || !searchResults.data || !searchResults.data.lots) {
-      console.warn('No valid search results provided for image saving');
       return searchResults;
     }
 
-    console.log(`Processing images for ${searchResults.data.lots.length} items in ${category}`);
+    // Reset existing images counter
+    this.existingImagesCount = 0;
     
     // Create a copy of the results to avoid modifying the original
     const resultsCopy = JSON.parse(JSON.stringify(searchResults));
@@ -705,11 +685,8 @@ class SearchStorageService {
         const explicitLimit = parseInt(process.env.IMAGE_CONCURRENCY, 10);
         if (!isNaN(explicitLimit) && explicitLimit > 0) {
           concurrencyLimit = explicitLimit;
-          console.log(`Using explicitly configured concurrency limit: ${concurrencyLimit}`);
         }
       }
-      
-      console.log(`Using concurrency limit of ${concurrencyLimit} based on available memory (${maxMemoryGB}GB)`);
 
       // Keep track of successes and failures
       let successCount = 0;
@@ -725,7 +702,6 @@ class SearchStorageService {
         const imageUrl = lot.image;
         
         if (!imageUrl) {
-          console.log(`No image URL for lot ${lot.lotNumber || i}`);
           continue;
         }
         
@@ -751,8 +727,6 @@ class SearchStorageService {
           batchTasks.map(async (task) => {
             const { index, lot, imageUrl, lotNumber, retryCount } = task;
             
-            console.log(`Processing image: ${imageUrl} for lot ${lotNumber} (attempt ${retryCount + 1})`);
-            
             try {
               // First try the primary browser-based method
               const gcsPath = await this.saveImage(
@@ -766,7 +740,6 @@ class SearchStorageService {
               if (gcsPath) {
                 // Check if this is a skipped image
                 if (gcsPath.startsWith('skipped:')) {
-                  console.log(`Image was skipped: ${gcsPath}`);
                   lots[index].imagePath = null;
                   lots[index].imageSkipped = true;
                   successCount++; // Count as success to avoid retries
@@ -780,30 +753,8 @@ class SearchStorageService {
                 throw new Error("saveImage returned null path");
               }
             } catch (error) {
-              // Log the error
-              console.error(`Error saving image for lot ${lotNumber}: ${error.message}`);
-              
-              // Log the failed image to GCS
-              try {
-                await this.logProblematicImage(
-                  imageUrl, 
-                  category, 
-                  lotNumber, 
-                  subcategory, 
-                  retryCount >= 2 ? 'max_retries_exceeded' : 'download_error',
-                  { 
-                    error: error.message,
-                    attempt: retryCount + 1,
-                    maxRetries: 2
-                  }
-                );
-              } catch (logError) {
-                console.error(`Failed to log problematic image: ${logError.message}`);
-              }
-              
               // If retries remain, add back to queue
               if (retryCount < 2) {
-                console.log(`Scheduling retry for image ${lotNumber} (attempt ${retryCount + 2})`);
                 taskQueue.push({
                   ...task,
                   retryCount: retryCount + 1
@@ -826,10 +777,14 @@ class SearchStorageService {
         
         console.log(`Batch ${batchNumber} results: ${batchSucceeded} successful, ${batchRetried} scheduled for retry, ${batchFailed} failed`);
         
+        // Log existing images occasionally
+        if (this.existingImagesCount > 0) {
+          console.log(`Total images already existing: ${this.existingImagesCount}`);
+        }
+        
         // Delay between batches to prevent overwhelming the system
         if (taskQueue.length > 0) {
           const delayMs = 1000; // 1 second delay between batches
-          console.log(`Waiting ${delayMs}ms before next batch...`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
           
           // Adaptively restart the browser to optimize memory usage
@@ -844,12 +799,10 @@ class SearchStorageService {
           
           if (totalProcessed > 0 && totalProcessed % restartFrequency === 0) {
             try {
-              console.log(`Restarting browser to free memory (restart frequency: every ${restartFrequency} images)...`);
               await this.closeBrowser();
               
               // Run garbage collection if available (Node.js with --expose-gc flag)
               if (global.gc) {
-                console.log("Running garbage collection...");
                 global.gc();
               }
               
@@ -859,7 +812,6 @@ class SearchStorageService {
               
               // Reinitialize browser
               await this.initBrowser(externalBrowser);
-              console.log("Browser restarted successfully");
             } catch (restartError) {
               console.error(`Error restarting browser: ${restartError.message}`);
             }
@@ -868,8 +820,7 @@ class SearchStorageService {
       }
       
       // Log final statistics
-      console.log(`Image processing completed for ${category}`);
-      console.log(`Final results: ${successCount} successful, ${failureCount} failed, ${retryCount} retries`);
+      console.log(`Images completed: ${successCount} successful, ${failureCount} failed, ${this.existingImagesCount} already existed`);
       
       return resultsCopy;
     } finally {

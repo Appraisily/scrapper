@@ -459,11 +459,11 @@ class PaginationManager {
     }
     
     // Extract navigation parameters from first page
-    const navParams = extractNavigationParams(firstPageResults);
-    this.navState = { 
-      ...navParams, 
-      cookies: initialCookies 
-    };
+      const navParams = extractNavigationParams(firstPageResults);
+      this.navState = { 
+        ...navParams, 
+        cookies: initialCookies 
+      };
     
     // Create results container
     const allResults = JSON.parse(JSON.stringify(firstPageResults));
@@ -661,7 +661,7 @@ class PaginationManager {
             } else {
               // We've already tried the restart strategy too many times
               console.log(`❌ Already tried restart strategy ${this.blankPageRetries[pageNum] - 1} times for page ${pageNum}`);
-              retries++;
+            retries++;
             }
           }
         } catch (error) {

@@ -1,7 +1,3 @@
 [
-  "acoma-pottery",
-  "actions-and-receivers",
-  "action-figures",
-  "adirondack-chair",
-  "advertising-and-signs"
+  "acoma-pottery"
 ]

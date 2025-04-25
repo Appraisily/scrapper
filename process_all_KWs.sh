@@ -76,18 +76,18 @@ if [ "$FORCE_MODE" = true ]; then
   unprocessed_count=$total_count
   processed_count=0
 else
-  echo "$(timestamp) Identifying unprocessed keywords..."
-  # Use grep to find keywords in the extracted list that are NOT in processed_KWs.log
-  # -F treats patterns as fixed strings
-  # -x matches whole lines exactly
-  # -v inverts the match (selects non-matching lines)
-  # -f reads patterns (processed keywords) from processed_KWs.log
-  grep -Fxvf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE" > "$TEMP_UNPROCESSED_FILE"
+echo "$(timestamp) Identifying unprocessed keywords..."
+# Use grep to find keywords in the extracted list that are NOT in processed_KWs.log
+# -F treats patterns as fixed strings
+# -x matches whole lines exactly
+# -v inverts the match (selects non-matching lines)
+# -f reads patterns (processed keywords) from processed_KWs.log
+grep -Fxvf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE" > "$TEMP_UNPROCESSED_FILE"
 
-  unprocessed_count=$(wc -l < "$TEMP_UNPROCESSED_FILE")
-  processed_count=$(grep -cFxf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE") # Count lines in log that ARE in the master list
+unprocessed_count=$(wc -l < "$TEMP_UNPROCESSED_FILE")
+processed_count=$(grep -cFxf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE") # Count lines in log that ARE in the master list
 
-  echo "$(timestamp) Found $unprocessed_count keywords to process out of $total_count total. $processed_count already processed."
+echo "$(timestamp) Found $unprocessed_count keywords to process out of $total_count total. $processed_count already processed."
 fi
 
 if [ "$unprocessed_count" -eq 0 ]; then
