@@ -207,4 +207,189 @@ router.get('/scrape', async (req, res) => {
   }
 });
 
+// Endpoint to scrape past auctions by artist name
+router.get('/scrape-artist', async (req, res) => {
+  try {
+    const { invaluableScraper } = req.app.locals;
+    if (!invaluableScraper) {
+      throw new Error('Scraper not initialized');
+    }
+    
+    // Get artist name from request
+    const artist = req.query.artist;
+    if (!artist) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameter',
+        message: 'Artist name is required'
+      });
+    }
+    
+    console.log(`Starting scrape for artist: ${artist}`);
+    
+    // Use 'artists' as the main folder name and artist name as the subfolder
+    const keyword = 'artists';
+    const query = artist;
+    
+    // Check if folder already exists in GCS
+    const folderExists = await searchStorage.folderExists(keyword, query);
+    if (folderExists) {
+      console.log(`Folder already exists for artist="${artist}". Skipping scrape.`);
+      return res.json({
+        success: true,
+        message: `Scrape skipped for artist "${artist}" - data already exists`,
+        resultSummary: {
+          folderExists: true,
+          skipped: true
+        }
+      });
+    }
+    
+    console.log(`Folder doesn't exist for artist="${artist}". Starting scrape...`);
+    
+    // Parse request parameters
+    const startPage = parseInt(req.query.startPage) || 1;
+    let maxPages = parseInt(req.query.maxPages) || 0; // Default to 0, will be determined from API response
+    const fetchAllPages = req.query.fetchAllPages !== 'false'; // Default to true
+    
+    // Get cookies from request if provided
+    const cookies = req.query.cookies ? 
+      JSON.parse(req.query.cookies) : 
+      [
+        {
+          name: 'AZTOKEN-PROD',
+          value: req.query.aztoken || '1CA056EF-FA81-41E5-A17D-9BAF5700CB29',
+          domain: '.invaluable.com'
+        },
+        {
+          name: 'cf_clearance',
+          value: req.query.cf_clearance || 'Yq4QHU.y14z93vU3CmLCK80CU7Pq6pgupmW0eM8k548-1738320515-1.2.1.1-ZFXBFgIPHghfvwwfhRbZx27.6zPihqfQ4vGP0VY1v66mKc.wwAOVRiRJhK6ouVt_.wMB30bkeY0r9NK.KUTU4gu7GzZxbyh0EH_gE36kcnHDvGATrI_vFs9y1XHq3PgtlHmBUflqgjcS6x9MC5YpXoeELPYiT0k59IPMn..1cHED7zV6T78hILKinjM6hZ.ZeQwetIN6SPmuvXb7V2z2ddJa64Vg_zUi.euce0SjjJr5ti7tHWoFsTV1DO1MkFwDfUpy1yTCdESho.EwyRgfdfRAlx6njkTmlWNkp1aXcXU',
+          domain: '.invaluable.com'
+        }
+      ];
+    
+    // Build search parameters with artist name as the query
+    // Use special URL parameters for artist search
+    const searchParams = buildSearchParams(keyword, query, startPage, {
+      artistName: artist  // Add artistName parameter for the search
+    });
+    
+    // If maxPages is not specified, first make a single page request to get the total pages
+    if (maxPages <= 0 && fetchAllPages) {
+      console.log(`No maxPages specified. Making initial request to determine total pages...`);
+      
+      // Make a single page request to get metadata
+      const initialResult = await invaluableScraper.search(searchParams, cookies);
+      
+      // Extract total pages from the metadata
+      let totalHits = 0;
+      let totalPages = 0;
+      let foundMetadata = false;
+
+      console.log('Checking for pagination metadata in API response');
+      
+      // First check if nbPages exists directly at the root level
+      if (initialResult && typeof initialResult === 'object') {
+        // Direct root level properties
+        if ('nbPages' in initialResult) {
+          console.log('Found nbPages directly at root level');
+          totalPages = initialResult.nbPages;
+          totalHits = initialResult.nbHits || 0;
+          foundMetadata = true;
+        }
+        // Check for metadata in different possible locations if not found at root
+        else if (initialResult.results?.[0]?.meta?.totalHits) {
+          // Standard format
+          console.log('Found metadata in standard format: results[0].meta');
+          totalHits = initialResult.results[0].meta.totalHits;
+          const hitsPerPage = initialResult.results[0].meta.hitsPerPage || 96;
+          totalPages = Math.ceil(totalHits / hitsPerPage);
+          foundMetadata = true;
+        } else if (initialResult.results?.[0]?.nbHits) {
+          // Another alternate format
+          console.log('Found metadata in alternate format: results[0] direct properties');
+          totalHits = initialResult.results[0].nbHits;
+          totalPages = initialResult.results[0].nbPages || Math.ceil(totalHits / 96);
+          foundMetadata = true;
+        }
+      }
+      
+      if (!foundMetadata) {
+        // Log the entire structure for debugging
+        console.error('Failed to find pagination metadata. Response structure:', 
+          JSON.stringify(initialResult, null, 2).substring(0, 1000));
+        
+        return res.status(404).json({
+          success: false,
+          error: 'Failed to get pagination metadata',
+          message: 'Could not determine total pages from API response. Response keys available: ' + 
+            Object.keys(initialResult || {}).join(', ')
+        });
+      }
+      
+      if (totalPages <= 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Failed to get pagination metadata',
+          message: 'Could not determine total pages from API response. Response structure: ' + 
+            JSON.stringify(initialResult, null, 2).substring(0, 500) + '...'
+        });
+      }
+      
+      maxPages = totalPages;
+      
+      console.log(`API reports ${totalHits} total items across ${maxPages} pages for artist "${artist}"`);
+      
+      // If we already retrieved page 1, we can use it as the first page result
+      if (startPage === 1) {
+        // Save the first page results - the scraper will skip it if it exists
+        try {
+          // Use the new folder structure: artists/artist_name/
+          await searchStorage.savePageResults(keyword, 1, initialResult, query);
+          console.log(`Saved initial page results for artist="${artist}"`);
+        } catch (error) {
+          console.warn(`Warning: Could not save initial page results: ${error.message}`);
+        }
+      }
+    } else if (maxPages <= 0) {
+      // If fetchAllPages is false but no maxPages specified, default to 1
+      maxPages = 1;
+    }
+    
+    console.log(`Parameters: startPage=${startPage}, maxPages=${maxPages}, fetchAllPages=${fetchAllPages}`);
+    
+    // Start the search
+    const result = fetchAllPages
+      ? await invaluableScraper.searchAllPages(searchParams, cookies, maxPages)
+      : await invaluableScraper.search(searchParams, cookies);
+    
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        error: 'No search results found',
+        message: 'The search did not return any results for this artist. Try different parameters or check that the cookies are valid.'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: `Search for artist "${artist}" completed`,
+      resultSummary: {
+        totalHits: result.results?.[0]?.meta?.totalHits || 0,
+        totalPages: maxPages,
+        resultsCount: result.results?.[0]?.hits?.length || 0,
+        pagesProcessed: result.pagesRetrieved || 1,
+        skippedPages: result.skippedExistingPages || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error in artist scraper:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to scrape artist',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router; 

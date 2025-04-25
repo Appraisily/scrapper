@@ -1,22 +1,79 @@
 #!/bin/bash
+# Script to scrape auction data for multiple artists
 
-# Script to run the artist list scraper
+# Configuration
+API_URL=${API_URL:-"http://localhost:8080"}
+ENDPOINT="/api/invaluable/scrape-artist"
+ARTISTS_FILE=${ARTISTS_FILE:-"artists.txt"}
+FIRST_ONLY=false
 
-echo "Starting artist list scraper..."
+# Parse command line arguments
+while getopts "f" opt; do
+  case $opt in
+    f)
+      FIRST_ONLY=true
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      echo "Usage: $0 [-f]"
+      echo "  -f  Process only the first artist (for testing)"
+      exit 1
+      ;;
+  esac
+done
 
-# Change to the project directory
-cd "$(dirname "$0")"
-
-# Make sure node_modules are installed
-if [ ! -d "node_modules" ]; then
-  echo "Installing dependencies..."
-  npm install
+echo "Starting artist scraping script..."
+echo "Using API URL: $API_URL"
+echo "Using artist list: $ARTISTS_FILE"
+if [ "$FIRST_ONLY" = true ]; then
+  echo "Mode: Testing (first artist only)"
+else
+  echo "Mode: Full processing (all artists)"
 fi
 
-# Create output directory if it doesn't exist
-mkdir -p src/scrapers/invaluable/artist-list/output
+# Check if the artists file exists
+if [ ! -f "$ARTISTS_FILE" ]; then
+  echo "Error: Artists file '$ARTISTS_FILE' not found."
+  exit 1
+fi
 
-# Run the scraper
-node src/scrapers/invaluable/artist-list/run.js
+# Process artists
+processed_count=0
+cat "$ARTISTS_FILE" | while read -r artist; do
+  # Skip empty lines and comments
+  if [[ -z "$artist" || "$artist" =~ ^# ]]; then
+    continue
+  fi
+  
+  # If we've already processed one artist and FIRST_ONLY is true, skip
+  if [ "$FIRST_ONLY" = true ] && [ $processed_count -gt 0 ]; then
+    echo "First artist processed. Skipping remaining artists due to -f flag."
+    break
+  fi
+  
+  echo "---------------------------------------"
+  echo "Scraping artist: $artist"
+  
+  # Encode the artist name for URL
+  encoded_artist=$(echo "$artist" | jq -s -R -r @uri)
+  
+  # Make the API call
+  echo "Calling API: $API_URL$ENDPOINT?artist=$encoded_artist"
+  curl -s "$API_URL$ENDPOINT?artist=$encoded_artist" | jq .
+  
+  echo "Completed scraping for artist: $artist"
+  
+  processed_count=$((processed_count + 1))
+  
+  # If FIRST_ONLY is true, we're done after the first artist
+  if [ "$FIRST_ONLY" = true ]; then
+    echo "First artist processed. Stopping due to -f flag."
+    break
+  fi
+  
+  echo "Waiting before next artist..."
+  sleep 10
+done
 
-echo "Scraping process completed." 
+echo "Artist scraping completed!"
+echo "Artists processed: $processed_count" 

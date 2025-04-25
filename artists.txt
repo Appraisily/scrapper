@@ -1,0 +1,11 @@
+# List of artists to scrape auction data for
+# One artist name per line
+# Lines starting with # are comments and are ignored
+
+Pablo Picasso
+Claude Monet
+Andy Warhol
+Salvador Dali
+Frida Kahlo
+Vincent van Gogh
+Leonardo da Vinci 
