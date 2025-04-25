@@ -34,14 +34,12 @@ class PaginationManager {
     this.failureStreak = 0;                           // Count of consecutive failures
     this.rateLimitDetected = false;                   // Flag for rate limiting
     
-    // Empty page handling
-    this.emptyPagesStreak = 0;                        // Count of consecutive empty pages
-    this.maxEmptyPagesStreak = options.maxEmptyPagesStreak || 10; // Max consecutive empty pages before stopping
+    // Blank page handling
+    this.blankPageRetries = {};                       // Track blank page retries by page number
+    this.maxBlankPageRetries = options.maxBlankPageRetries || 3; // Max retries for blank pages
     
     // Retry settings
     this.maxRetries = options.maxRetries || 3;        // Max retries per page
-    this.maxBlankPageRetries = options.maxBlankPageRetries || 3; // Max retries for blank pages with restart strategy
-    this.blankPageRetries = {};                       // Track blank page retries by page number
     
     // State tracking
     this.completedPages = new Set();
@@ -367,9 +365,7 @@ class PaginationManager {
     try {
       if (!pageResults || !pageResults.results || !pageResults.results[0]?.hits) {
         console.log(`⚠️ No valid hits found in page ${pageNum} results`);
-        this.emptyPagesStreak++;
         this.stats.emptyPages++;
-        console.log(`Empty pages streak: ${this.emptyPagesStreak}/${this.maxEmptyPagesStreak}`);
         
         // Track this as a blank page for potential restart strategy
         this.blankPageRetries[pageNum] = this.blankPageRetries[pageNum] || 0;
@@ -409,19 +405,9 @@ class PaginationManager {
         }
       });
       
-      // If we found any new results, reset the empty pages streak
-      if (newResults > 0) {
-        this.emptyPagesStreak = 0;
-        
-        // Reset blank page retry counter for this page if it was previously blank
-        if (this.blankPageRetries[pageNum]) {
-          delete this.blankPageRetries[pageNum];
-        }
-      } else {
-        // Otherwise increment it
-        this.emptyPagesStreak++;
-        this.stats.emptyPages++;
-        console.log(`Empty pages streak: ${this.emptyPagesStreak}/${this.maxEmptyPagesStreak} (no new items)`);
+      // Reset blank page retry counter for this page if it was previously blank
+      if (this.blankPageRetries[pageNum]) {
+        delete this.blankPageRetries[pageNum];
       }
       
       console.log(`Page ${pageNum}: ${newResults} new items, ${duplicates} duplicates`);
@@ -473,13 +459,11 @@ class PaginationManager {
     }
     
     // Extract navigation parameters from first page
-    if (!this.navState.refId) {
-      const navParams = extractNavigationParams(firstPageResults);
-      this.navState = { 
-        ...navParams, 
-        cookies: initialCookies 
-      };
-    }
+    const navParams = extractNavigationParams(firstPageResults);
+    this.navState = { 
+      ...navParams, 
+      cookies: initialCookies 
+    };
     
     // Create results container
     const allResults = JSON.parse(JSON.stringify(firstPageResults));
@@ -506,22 +490,12 @@ class PaginationManager {
     console.log(`Starting pagination for "${this.category}" with query "${this.query}"`);
     console.log(`Estimated total pages: ${estimatedTotalPages}, processing up to ${pagesToProcess}`);
     
-    // Reset empty pages streak counter
-    this.emptyPagesStreak = 0;
-    
     // Main pagination loop
     for (let pageNum = 2; pageNum <= pagesToProcess; pageNum++) {
       // Skip if already completed
       if (this.completedPages.has(pageNum)) {
         console.log(`Page ${pageNum} already processed, skipping`);
         continue;
-      }
-      
-      // Check if we should stop due to too many consecutive empty pages
-      if (this.emptyPagesStreak >= this.maxEmptyPagesStreak) {
-        console.log(`⚠️ Stopping pagination after ${this.emptyPagesStreak} consecutive empty pages`);
-        console.log(`This likely indicates we've reached the end of available results.`);
-        break;
       }
       
       this.currentPage = pageNum;
@@ -578,7 +552,7 @@ class PaginationManager {
             (this.stats.successfulRequests + 1);
           
           // Check if we got valid results
-          if (pageResults && pageResults.results && pageResults.results[0]?.hits) {
+          if (pageResults && pageResults.results && pageResults.results[0]?.hits && pageResults.results[0]?.hits.length > 0) {
             // Success! Process results
             this.stats.successfulRequests++;
             this.updateRateLimitTracking(true);
@@ -600,11 +574,11 @@ class PaginationManager {
             
             // Extract updated nav state if available
             const updatedNavParams = extractNavigationParams(pageResults);
-            if (updatedNavParams.refId) {
-              this.navState = {
-                ...this.navState,
-                ...updatedNavParams
-              };
+            if (updatedNavParams.searchContext) {
+              this.navState.searchContext = updatedNavParams.searchContext;
+            }
+            if (updatedNavParams.searcher) {
+              this.navState.searcher = updatedNavParams.searcher;
             }
             
             // Save checkpoint periodically
@@ -612,84 +586,83 @@ class PaginationManager {
               await this.saveCheckpoint();
             }
           } else {
-            // Failed to get valid results
-            this.stats.failedRequests++;
-            this.failedPages.add(pageNum);
-            this.updateRateLimitTracking(false);
+            // We got a blank page - handle appropriately
+            console.log(`⚠️ Blank page detected for page ${pageNum}`);
+            this.stats.emptyPages++;
             
-            console.log(`❌ Failed to get results for page ${pageNum}`);
-            
-            // Check for rate limiting
-            if (this.isRateLimited(pageResults)) {
-              this.updateRateLimitTracking(false, true);
-              console.log(`⚠️ Rate limiting detected for page ${pageNum}`);
-            }
-            
-            // Special handling for blank pages - increment retry counter
+            // If we haven't tried the restart strategy for this page yet, try it
             this.blankPageRetries[pageNum] = (this.blankPageRetries[pageNum] || 0) + 1;
             console.log(`Blank page retry count for page ${pageNum}: ${this.blankPageRetries[pageNum]}/${this.maxBlankPageRetries}`);
             
-            // If we've tried this page multiple times and it's still blank, try the restart strategy
-            if (this.blankPageRetries[pageNum] >= 2 && retries >= this.maxRetries) {
-              // Only attempt the restart strategy if we haven't exceeded the max restarts for this page
-              if (this.blankPageRetries[pageNum] <= this.maxBlankPageRetries) {
-                console.log(`⚠️ Page ${pageNum} is consistently blank. Attempting restart strategy...`);
+            if (this.blankPageRetries[pageNum] <= this.maxBlankPageRetries) {
+              console.log(`⚠️ Attempting restart strategy for blank page ${pageNum}...`);
+              
+              // Restart from page 1 to refresh session state
+              const refreshed = await this.refreshSession(browser, params);
+              
+              if (refreshed) {
+                // Jump directly back to the problematic page
+                console.log(`Starting fresh request for page ${pageNum} after session refresh...`);
                 
-                try {
-                  // Step 1: Go back to page 1 to refresh session/cookies
-                  console.log(`Refreshing session by going back to page 1...`);
-                  await this.refreshSession(browser, params);
+                // Apply a delay before retry
+                await new Promise(r => setTimeout(r, this.baseDelay * 2));
+                
+                pageResults = await requestPageResults(page, pageNum, params, this.navState);
+                
+                if (pageResults && pageResults.results && pageResults.results[0]?.hits && pageResults.results[0]?.hits.length > 0) {
+                  // Success with restart strategy!
+                  this.stats.successfulRequests++;
+                  this.stats.blankPageRestarts++;
+                  this.updateRateLimitTracking(true);
                   
-                  // Step 2: Jump directly back to the problematic page
-                  console.log(`Jumping directly to page ${pageNum} after session refresh...`);
+                  // Process the page results
+                  const newItems = this.processPageResults(allResults, pageResults, pageNum);
                   
-                  // Apply additional delay before retry
-                  await new Promise(r => setTimeout(r, this.baseDelay * 2));
-                  
-                  // Try fetching the page again
-                  pageResults = await requestPageResults(page, pageNum, params, this.navState);
-                  
-                  if (pageResults && pageResults.results && pageResults.results[0]?.hits) {
-                    // Success with restart strategy!
-                    this.stats.successfulRequests++;
-                    this.stats.blankPageRestarts++;
-                    this.updateRateLimitTracking(true);
-                    
-                    // Process the page results
-                    const newItems = this.processPageResults(allResults, pageResults, pageNum);
-                    
-                    // Add to current batch if GCS is enabled
-                    if (this.gcsEnabled) {
-                      this.addToBatch(pageResults, pageNum);
-                    }
-                    
-                    // Mark page as completed
-                    this.completedPages.add(pageNum);
-                    this.failedPages.delete(pageNum);
-                    
-                    console.log(`✅ Restart strategy worked! Added ${newItems} items from page ${pageNum}, total: ${this.stats.totalItems}`);
-                    success = true;
-                    
-                    // Extract updated nav state if available
-                    const updatedNavParams = extractNavigationParams(pageResults);
-                    if (updatedNavParams.refId) {
-                      this.navState = {
-                        ...this.navState,
-                        ...updatedNavParams
-                      };
-                    }
-                  } else {
-                    console.log(`❌ Restart strategy failed for page ${pageNum}`);
-                    // Continue to next retry or give up
+                  // Add to current batch if GCS is enabled
+                  if (this.gcsEnabled) {
+                    this.addToBatch(pageResults, pageNum);
                   }
-                } catch (restartError) {
-                  console.error(`Error during restart strategy: ${restartError.message}`);
-                  // Continue to next retry or give up
+                  
+                  // Mark page as completed
+                  this.completedPages.add(pageNum);
+                  this.failedPages.delete(pageNum);
+                  
+                  console.log(`✅ Restart strategy worked! Added ${newItems} items from page ${pageNum}`);
+                  success = true;
+                  
+                  // Extract updated nav state if available
+                  const updatedNavParams = extractNavigationParams(pageResults);
+                  if (updatedNavParams.searchContext) {
+                    this.navState.searchContext = updatedNavParams.searchContext;
+                  }
+                  if (updatedNavParams.searcher) {
+                    this.navState.searcher = updatedNavParams.searcher;
+                  }
+                } else {
+                  // Still got a blank page even after restart
+                  console.log(`❌ Restart attempt ${this.blankPageRetries[pageNum]} failed for page ${pageNum}`);
+                  
+                  // Mark as failed if we've exhausted all retry attempts
+                  if (this.blankPageRetries[pageNum] >= this.maxBlankPageRetries) {
+                    console.log(`Exhausted all ${this.maxBlankPageRetries} restart attempts for blank page ${pageNum}. Moving to next keyword.`);
+                    
+                    // Mark this page as completed to avoid future retries
+                    this.completedPages.add(pageNum);
+                    
+                    // End pagination early
+                    console.log(`Ending pagination early due to persistent blank pages`);
+                    break;
+                  }
                 }
+              } else {
+                console.log(`❌ Failed to refresh session, will retry normally`);
+                retries++;
               }
+            } else {
+              // We've already tried the restart strategy too many times
+              console.log(`❌ Already tried restart strategy ${this.blankPageRetries[pageNum] - 1} times for page ${pageNum}`);
+              retries++;
             }
-            
-            retries++;
           }
         } catch (error) {
           console.error(`Error processing page ${pageNum}: ${error.message}`);
@@ -703,6 +676,13 @@ class PaginationManager {
       // If failed after all retries
       if (!success) {
         console.error(`❌ Failed to process page ${pageNum} after ${this.maxRetries} retries`);
+        
+        // If this was a blank page and we tried restart strategy but still failed,
+        // end pagination early
+        if (this.blankPageRetries[pageNum] && this.blankPageRetries[pageNum] >= this.maxBlankPageRetries) {
+          console.log(`Ending pagination early due to persistent blank pages starting at page ${pageNum}`);
+          break;
+        }
       }
     }
     
@@ -735,6 +715,8 @@ class PaginationManager {
     try {
       const page = browser.getPage();
       
+      console.log('🔄 Refreshing scraping session from page 1 to fix blank page issue...');
+      
       // Step 1: Request session info to refresh tokens
       console.log('Requesting session info to refresh tokens...');
       const sessionInfoResponse = await requestSessionInfo(page, this.navState);
@@ -748,11 +730,11 @@ class PaginationManager {
         
         // Update navigation state with fresh data
         const updatedNavParams = extractNavigationParams(page1Results);
-        if (updatedNavParams.refId) {
-          this.navState = {
-            ...this.navState,
-            ...updatedNavParams
-          };
+        if (updatedNavParams.searchContext) {
+          this.navState.searchContext = updatedNavParams.searchContext;
+        }
+        if (updatedNavParams.searcher) {
+          this.navState.searcher = updatedNavParams.searcher;
         }
         
         return true;

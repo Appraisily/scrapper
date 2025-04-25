@@ -8,6 +8,25 @@ PROCESSED_LOG="processed_KWs.log"
 TEMP_ALL_KEYWORDS_FILE=$(mktemp)  # Temporary file for all keywords from JSON
 TEMP_UNPROCESSED_FILE=$(mktemp) # Temporary file for unprocessed keywords
 MAX_RETRY_COUNT=3 # Number of retries for failed requests
+FORCE_MODE=false # Default: don't force reprocessing
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  key="$1"
+  case $key in
+    -f|--force)
+      FORCE_MODE=true
+      echo "Force mode activated: All keywords will be processed regardless of processed_KWs.log"
+      shift
+      ;;
+    *)
+      echo "Unknown option: $key"
+      echo "Usage: $0 [-f|--force]"
+      echo "  -f, --force    Force reprocessing of all keywords, even those already in processed_KWs.log"
+      exit 1
+      ;;
+  esac
+done
 
 # --- Helper Functions ---
 cleanup() {
@@ -50,21 +69,30 @@ fi
 total_count=$(wc -l < "$TEMP_ALL_KEYWORDS_FILE")
 echo "$(timestamp) Found $total_count total keywords in $KEYWORDS_FILE."
 
-echo "$(timestamp) Identifying unprocessed keywords..."
-# Use grep to find keywords in the extracted list that are NOT in processed_KWs.log
-# -F treats patterns as fixed strings
-# -x matches whole lines exactly
-# -v inverts the match (selects non-matching lines)
-# -f reads patterns (processed keywords) from processed_KWs.log
-grep -Fxvf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE" > "$TEMP_UNPROCESSED_FILE"
+# If in force mode, process all keywords
+if [ "$FORCE_MODE" = true ]; then
+  echo "$(timestamp) Force mode enabled - processing all $total_count keywords"
+  cp "$TEMP_ALL_KEYWORDS_FILE" "$TEMP_UNPROCESSED_FILE"
+  unprocessed_count=$total_count
+  processed_count=0
+else
+  echo "$(timestamp) Identifying unprocessed keywords..."
+  # Use grep to find keywords in the extracted list that are NOT in processed_KWs.log
+  # -F treats patterns as fixed strings
+  # -x matches whole lines exactly
+  # -v inverts the match (selects non-matching lines)
+  # -f reads patterns (processed keywords) from processed_KWs.log
+  grep -Fxvf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE" > "$TEMP_UNPROCESSED_FILE"
 
-unprocessed_count=$(wc -l < "$TEMP_UNPROCESSED_FILE")
-processed_count=$(grep -cFxf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE") # Count lines in log that ARE in the master list
+  unprocessed_count=$(wc -l < "$TEMP_UNPROCESSED_FILE")
+  processed_count=$(grep -cFxf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE") # Count lines in log that ARE in the master list
 
-echo "$(timestamp) Found $unprocessed_count keywords to process out of $total_count total. $processed_count already processed."
+  echo "$(timestamp) Found $unprocessed_count keywords to process out of $total_count total. $processed_count already processed."
+fi
 
 if [ "$unprocessed_count" -eq 0 ]; then
   echo "$(timestamp) All keywords from '$KEYWORDS_FILE' have already been processed according to '$PROCESSED_LOG'."
+  echo "$(timestamp) To reprocess all keywords, use the --force option."
   exit 0
 fi
 
@@ -141,6 +169,16 @@ while IFS= read -r keyword || [[ -n "$keyword" ]]; do
             echo "$(timestamp) Scraping summary: Processed $pages_processed pages, skipped $pages_skipped existing pages, found $total_pages total pages"
           fi
           
+          # In force mode, we need to remove previous entries before adding
+          if [ "$FORCE_MODE" = true ]; then
+            # Make a temporary file for the new log
+            TEMP_LOG_FILE=$(mktemp)
+            # Remove existing entry for this keyword if present
+            grep -Fxv "$keyword" "$PROCESSED_LOG" > "$TEMP_LOG_FILE"
+            # Replace the log file with our filtered version
+            mv "$TEMP_LOG_FILE" "$PROCESSED_LOG"
+          fi
+          
           # Add the successfully processed keyword to the log file
           echo "$keyword" >> "$PROCESSED_LOG"
           success=true
@@ -183,6 +221,14 @@ while IFS= read -r keyword || [[ -n "$keyword" ]]; do
   if [ "$success" = false ]; then
     echo "$(timestamp) WARNING: Failed to process keyword '$keyword' after $MAX_RETRY_COUNT attempts."
     echo "$(timestamp) Adding to processed log to avoid endless retries in future runs."
+    
+    # In force mode, remove any previous entries of this keyword first
+    if [ "$FORCE_MODE" = true ]; then
+      TEMP_LOG_FILE=$(mktemp)
+      grep -Fxv "$keyword" "$PROCESSED_LOG" > "$TEMP_LOG_FILE"
+      mv "$TEMP_LOG_FILE" "$PROCESSED_LOG"
+    fi
+    
     echo "$keyword" >> "$PROCESSED_LOG"
   fi
   

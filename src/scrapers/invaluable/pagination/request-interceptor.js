@@ -93,7 +93,6 @@ async function setupRequestInterception(page, navState, pageNum, onApiResponse) 
               const extractedParams = extractFromApiResponse(json);
               
               // Actualizar el estado de navegación con los parámetros extraídos
-              if (extractedParams.refId) navState.refId = extractedParams.refId;
               if (extractedParams.searchContext) navState.searchContext = extractedParams.searchContext;
               if (extractedParams.searcher) navState.searcher = extractedParams.searcher;
               
@@ -108,11 +107,10 @@ async function setupRequestInterception(page, navState, pageNum, onApiResponse) 
             console.log(`Respuesta de session-info para página ${pageNum} recibida (${status})`);
             
             if (status === 200) {
-              // Intentar extraer refId y searchContext de la respuesta
+              // Intentar extraer searchContext de la respuesta
               const extractedParams = extractFromApiResponse(json);
               
               // Actualizar el estado de navegación con los parámetros extraídos
-              if (extractedParams.refId && !navState.refId) navState.refId = extractedParams.refId;
               if (extractedParams.searchContext && !navState.searchContext) navState.searchContext = extractedParams.searchContext;
             }
           }
@@ -235,15 +233,6 @@ function buildResultsPayload(params, pageNum, navState) {
       "Jewelry",
       "Commercial & Industrial"
     ];
-  }
-  
-  // Si tenemos refId de Algolia, añadirlo
-  if (navState.refId) {
-    // Nota: En Algolia, esto podría ir como un parámetro adicional
-    // Pero basado en las solicitudes observadas, no parece usarse
-    console.log(`Tenemos refId disponible: ${navState.refId}, pero no se incluye en formato Algolia`);
-  } else {
-    console.log(`Sin refId disponible, usando formato Algolia estándar con page=${algoliaPage}`);
   }
   
   return payload;
