@@ -55,6 +55,11 @@ class SearchStorageService {
     
     // Track existing images count for batch logging
     this.existingImagesCount = 0;
+    
+    // Tab pool for image downloads
+    this.imageTabPool = [];
+    this.maxImageTabs = parseInt(process.env.MAX_IMAGE_TABS || '5', 10); // Default 5 tabs max
+    console.log(`SearchStorageService initialized with max ${this.maxImageTabs} image tabs`);
   }
   
   /**
@@ -363,6 +368,21 @@ class SearchStorageService {
    */
   async closeBrowser() {
     if (this.browser && this.shouldCloseBrowser) {
+      // First close all tabs in the image tab pool
+      if (this.imageTabPool.length > 0) {
+        console.log(`Closing ${this.imageTabPool.length} tabs in image tab pool`);
+        for (const page of this.imageTabPool) {
+          try {
+            await page.close().catch(() => {});
+          } catch (err) {
+            // Ignore errors during cleanup
+          }
+        }
+        // Reset the pool
+        this.imageTabPool = [];
+      }
+      
+      // Then close the browser
       await this.browser.close();
       this.browser = null;
     }
@@ -429,7 +449,7 @@ class SearchStorageService {
   }
   
   /**
-   * This method uses a fresh page for each image to download and save it
+   * This method uses tab pooling to download and save images efficiently
    * 
    * @param {string} imageUrl - URL of the image to download
    * @param {string} category - Category/search term
@@ -486,8 +506,36 @@ class SearchStorageService {
       // Reference to the GCS file for saving the image
       const file = this.bucket.file(filePath);
       
-      // Always create a new page for each image to prevent request conflicts
-      const page = await this.browser.newPage();
+      // Get a page from the pool or create a new one if needed
+      let page;
+      let pageFromPool = false;
+      
+      if (this.imageTabPool.length > 0) {
+        // Reuse existing tab from pool
+        page = this.imageTabPool.pop();
+        pageFromPool = true;
+        // Reset page state
+        try {
+          await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 });
+        } catch (resetError) {
+          // If reset fails, close this page and create a new one
+          try { 
+            await page.close().catch(() => {}); 
+          } catch (e) { /* ignore */ }
+          page = null;
+          pageFromPool = false;
+        }
+      }
+      
+      // Create new page if needed (no page from pool or reset failed)
+      if (!page) {
+        if (this.browser) {
+          page = await this.browser.newPage();
+        } else {
+          console.error('Browser not initialized, cannot create new page');
+          return null;
+        }
+      }
       
       try {
         // Configure page
@@ -612,11 +660,25 @@ class SearchStorageService {
         await this.logProblematicImage(url, category, lotNumber, subcategory, 'error', { errorMessage: error.message });
         return null;
       } finally {
-        // Always close the page to free resources
-        try {
-          if (page) await page.close();
-        } catch (error) {
-          // Silent page close error
+        // Return page to pool instead of closing it for reuse
+        if (page) {
+          // Check if we should return page to pool or close it
+          if (this.imageTabPool.length < this.maxImageTabs) {
+            try {
+              // Reset page to ready state
+              await page.goto('about:blank', { waitUntil: 'domcontentloaded', timeout: 5000 })
+                .catch(() => {}); // Ignore errors during reset
+                
+              // Return to pool for reuse
+              this.imageTabPool.push(page);
+            } catch (resetError) {
+              // If reset fails, close the page instead of returning to pool
+              try { await page.close().catch(() => {}); } catch (e) { /* ignore */ }
+            }
+          } else {
+            // Pool is full, close the page
+            try { await page.close().catch(() => {}); } catch (e) { /* ignore */ }
+          }
         }
       }
     } catch (outerError) {
