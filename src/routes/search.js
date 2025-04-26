@@ -173,41 +173,13 @@ function standardizeResponse(data, parameters = {}) {
 // Search endpoint
 router.get('/', async (req, res) => {
   try {
-    const { invaluableScraper } = req.app.locals;
-    if (!invaluableScraper) {
+    // Get the global scraper as a fallback
+    const globalScraper = req.app.locals.invaluableScraper;
+    if (!globalScraper) {
       throw new Error('Scraper not initialized');
     }
 
-    // Check for direct API data in request
-    if (req.query.directApiData) {
-      try {
-        console.log('Using direct API data provided in request');
-        const apiData = JSON.parse(req.query.directApiData);
-        const formattedResults = formatSearchResults(apiData);
-        return res.json(standardizeResponse(formattedResults, req.query));
-      } catch (error) {
-        console.error('Error parsing direct API data:', error);
-        // Continue with normal scraping if direct data parsing fails
-      }
-    }
-
-    // Use cookies from request if provided
-    const cookies = req.query.cookies ? 
-      JSON.parse(req.query.cookies) : 
-      [
-        {
-          name: 'AZTOKEN-PROD',
-          value: req.query.aztoken || '1CA056EF-FA81-41E5-A17D-9BAF5700CB29',
-          domain: '.invaluable.com'
-        },
-        {
-          name: 'cf_clearance',
-          value: req.query.cf_clearance || 'Yq4QHU.y14z93vU3CmLCK80CU7Pq6pgupmW0eM8k548-1738320515-1.2.1.1-ZFXBFgIPHghfvwwfhRbZx27.6zPihqfQ4vGP0VY1v66mKc.wwAOVRiRJhK6ouVt_.wMB30bkeY0r9NK.KUTU4gu7GzZxbyh0EH_gE36kcnHDvGATrI_vFs9y1XHq3PgtlHmBUflqgjcS6x9MC5YpXoeELPYiT0k59IPMn..1cHED7zV6T78hILKinjM6hZ.ZeQwetIN6SPmuvXb7V2z2ddJa64Vg_zUi.euce0SjjJr5ti7tHWoFsTV1DO1MkFwDfUpy1yTCdESho.EwyRgfdfRAlx6njkTmlWNkp1aXcXU',
-          domain: '.invaluable.com'
-        }
-      ];
-
-    // Create clean query params object by removing our special parameters
+    // Get or create clean query params object by removing our special parameters
     const searchParams = {...req.query};
     delete searchParams.directApiData;
     delete searchParams.cookies;
@@ -219,7 +191,7 @@ router.get('/', async (req, res) => {
     delete searchParams.fetchAllPages;
     
     // Get max pages to fetch if specified
-    const maxPages = parseInt(req.query.maxPages) || 0; // Default to 0, will be determined from API response
+    const maxPages = parseInt(req.query.maxPages) || 0;
     delete searchParams.maxPages;
     
     // Check if we should save to GCS
@@ -270,6 +242,27 @@ router.get('/', async (req, res) => {
 
     console.log('Starting search with parameters:', searchParams);
     
+    // Create a keyword-specific scraper for this request
+    const { InvaluableScraper } = require('../scrapers/invaluable');
+    const keywordScraper = new InvaluableScraper({ keyword: category });
+    await keywordScraper.initialize();
+
+    // Use cookies from request if provided
+    const cookies = req.query.cookies ? 
+      JSON.parse(req.query.cookies) : 
+      [
+        {
+          name: 'AZTOKEN-PROD',
+          value: req.query.aztoken || '1CA056EF-FA81-41E5-A17D-9BAF5700CB29',
+          domain: '.invaluable.com'
+        },
+        {
+          name: 'cf_clearance',
+          value: req.query.cf_clearance || 'Yq4QHU.y14z93vU3CmLCK80CU7Pq6pgupmW0eM8k548-1738320515-1.2.1.1-ZFXBFgIPHghfvwwfhRbZx27.6zPihqfQ4vGP0VY1v66mKc.wwAOVRiRJhK6ouVt_.wMB30bkeY0r9NK.KUTU4gu7GzZxbyh0EH_gE36kcnHDvGATrI_vFs9y1XHq3PgtlHmBUflqgjcS6x9MC5YpXoeELPYiT0k59IPMn..1cHED7zV6T78hILKinjM6hZ.ZeQwetIN6SPmuvXb7V2z2ddJa64Vg_zUi.euce0SjjJr5ti7tHWoFsTV1DO1MkFwDfUpy1yTCdESho.EwyRgfdfRAlx6njkTmlWNkp1aXcXU',
+          domain: '.invaluable.com'
+        }
+      ];
+    
     let result;
     let finalMaxPages = maxPages;
     
@@ -279,7 +272,7 @@ router.get('/', async (req, res) => {
             console.log('No maxPages specified. Making initial request to determine total pages...');
             
             // Make a single page request to get metadata
-            const initialResult = await invaluableScraper.search(searchParams, cookies);
+            const initialResult = await keywordScraper.search(searchParams, cookies);
             
             // Extract total pages from the metadata
             let totalHits = 0;
@@ -368,9 +361,9 @@ router.get('/', async (req, res) => {
                                                 
                                                 // Try to get the browser instance
                                                 let browserInstance = null;
-                                                if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
-                                                    if (req.app.locals.invaluableScraper.browser.getBrowser) {
-                                                        browserInstance = await req.app.locals.invaluableScraper.browser.getBrowser();
+                                                if (keywordScraper && keywordScraper.browser) {
+                                                    if (keywordScraper.browser.getBrowser) {
+                                                        browserInstance = await keywordScraper.browser.getBrowser();
                                                     }
                                                 }
                                                 
@@ -406,7 +399,8 @@ router.get('/', async (req, res) => {
                                 console.log("Will download images for additional pages after fetching all pages");
                             }
                             
-                            await searchStorage.savePageResults(category, 1, standardizedResponse);
+                            const storage = SearchStorageService.getInstance({ keyword: category });
+                            await storage.savePageResults(category, 1, standardizedResponse);
                             console.log(`Saved initial page results to GCS for category "${category}"`);
                         } catch (error) {
                             console.warn(`Warning: Could not save initial page results: ${error.message}`);
@@ -423,23 +417,23 @@ router.get('/', async (req, res) => {
                         paginationParams.saveImages = 'true';
                     }
                     
-                    result = await invaluableScraper.searchAllPages(paginationParams, cookies, finalMaxPages);
+                    result = await keywordScraper.searchAllPages(paginationParams, cookies, finalMaxPages);
                 }
             } else {
                 // Use user-specified maxPages
                 finalMaxPages = maxPages;
                 console.log(`Fetching all pages (up to ${finalMaxPages})`);
-                result = await invaluableScraper.searchAllPages(searchParams, cookies, finalMaxPages);
+                result = await keywordScraper.searchAllPages(searchParams, cookies, finalMaxPages);
             }
         } else {
             // Use user-specified maxPages
             finalMaxPages = maxPages;
             console.log(`Fetching all pages (up to ${finalMaxPages})`);
-            result = await invaluableScraper.searchAllPages(searchParams, cookies, finalMaxPages);
+            result = await keywordScraper.searchAllPages(searchParams, cookies, finalMaxPages);
         }
     } else {
         // Just fetch a single page
-        result = await invaluableScraper.search(searchParams, cookies);
+        result = await keywordScraper.search(searchParams, cookies);
     }
     
     if (!result) {
@@ -524,9 +518,9 @@ router.get('/', async (req, res) => {
               try {
                 // Try to get the browser instance to use
                 let browserInstance = null;
-                if (req.app.locals.invaluableScraper && req.app.locals.invaluableScraper.browser) {
-                  if (req.app.locals.invaluableScraper.browser.getBrowser) {
-                    browserInstance = await req.app.locals.invaluableScraper.browser.getBrowser();
+                if (keywordScraper && keywordScraper.browser) {
+                  if (keywordScraper.browser.getBrowser) {
+                    browserInstance = await keywordScraper.browser.getBrowser();
                     console.log('Using existing browser instance from scraper');
                   }
                 }

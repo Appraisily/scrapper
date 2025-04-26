@@ -37,8 +37,9 @@ function buildSearchParams(keyword, query, page = 1, additionalParams = {}) {
 // Endpoint to scrape with dynamic query and keyword 
 router.get('/scrape', async (req, res) => {
   try {
-    const { invaluableScraper } = req.app.locals;
-    if (!invaluableScraper) {
+    // Get the global scraper as a fallback
+    const globalScraper = req.app.locals.invaluableScraper;
+    if (!globalScraper) {
       throw new Error('Scraper not initialized');
     }
     
@@ -64,6 +65,11 @@ router.get('/scrape', async (req, res) => {
     }
     
     console.log(`Folder doesn't exist for keyword="${keyword}", query="${query}". Starting scrape...`);
+    
+    // Create a keyword-specific scraper for this request
+    const { InvaluableScraper } = require('../scrapers/invaluable');
+    const keywordScraper = new InvaluableScraper({ keyword });
+    await keywordScraper.initialize();
     
     // Parse request parameters
     const startPage = parseInt(req.query.startPage) || 1;
@@ -94,7 +100,7 @@ router.get('/scrape', async (req, res) => {
       console.log(`No maxPages specified. Making initial request to determine total pages...`);
       
       // Make a single page request to get metadata
-      const initialResult = await invaluableScraper.search(searchParams, cookies);
+      const initialResult = await keywordScraper.search(searchParams, cookies);
       
       // Extract total pages from the metadata
       let totalHits = 0;
@@ -175,8 +181,8 @@ router.get('/scrape', async (req, res) => {
     
     // Start the search
     const result = fetchAllPages
-      ? await invaluableScraper.searchAllPages(searchParams, cookies, maxPages)
-      : await invaluableScraper.search(searchParams, cookies);
+      ? await keywordScraper.searchAllPages(searchParams, cookies, maxPages)
+      : await keywordScraper.search(searchParams, cookies);
     
     if (!result) {
       return res.status(404).json({
@@ -210,8 +216,9 @@ router.get('/scrape', async (req, res) => {
 // Endpoint to scrape past auctions by artist name
 router.get('/scrape-artist', async (req, res) => {
   try {
-    const { invaluableScraper } = req.app.locals;
-    if (!invaluableScraper) {
+    // Get the global scraper as a fallback
+    const globalScraper = req.app.locals.invaluableScraper;
+    if (!globalScraper) {
       throw new Error('Scraper not initialized');
     }
     
@@ -248,6 +255,11 @@ router.get('/scrape-artist', async (req, res) => {
     
     console.log(`Folder doesn't exist for artist="${artist}". Starting scrape...`);
     
+    // Create a keyword-specific scraper for this request
+    const { InvaluableScraper } = require('../scrapers/invaluable');
+    const keywordScraper = new InvaluableScraper({ keyword });
+    await keywordScraper.initialize();
+    
     // Parse request parameters
     const startPage = parseInt(req.query.startPage) || 1;
     let maxPages = parseInt(req.query.maxPages) || 0; // Default to 0, will be determined from API response
@@ -280,7 +292,7 @@ router.get('/scrape-artist', async (req, res) => {
       console.log(`No maxPages specified. Making initial request to determine total pages...`);
       
       // Make a single page request to get metadata
-      const initialResult = await invaluableScraper.search(searchParams, cookies);
+      const initialResult = await keywordScraper.search(searchParams, cookies);
       
       // Extract total pages from the metadata
       let totalHits = 0;
@@ -361,8 +373,8 @@ router.get('/scrape-artist', async (req, res) => {
     
     // Start the search
     const result = fetchAllPages
-      ? await invaluableScraper.searchAllPages(searchParams, cookies, maxPages)
-      : await invaluableScraper.search(searchParams, cookies);
+      ? await keywordScraper.searchAllPages(searchParams, cookies, maxPages)
+      : await keywordScraper.search(searchParams, cookies);
     
     if (!result) {
       return res.status(404).json({
