@@ -7,8 +7,8 @@ KEYWORDS_FILE="KWs.txt"
 PROCESSED_LOG="processed_KWs.log"
 TEMP_ALL_KEYWORDS_FILE=$(mktemp)  # Temporary file for all keywords from JSON
 TEMP_UNPROCESSED_FILE=$(mktemp) # Temporary file for unprocessed keywords
-MAX_RETRY_COUNT=3 # Number of retries for failed requests
 FORCE_MODE=false # Default: don't force reprocessing
+MAX_RESTARTS=2 # Maximum number of times to attempt a restart for a single keyword
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -33,12 +33,65 @@ cleanup() {
   echo "Cleaning up temporary files..."
   rm -f "$TEMP_ALL_KEYWORDS_FILE"
   rm -f "$TEMP_UNPROCESSED_FILE"
+  # Clean up any lingering curl output files
+  rm -f curl_output_*.tmp curl_error_*.tmp
 }
 trap cleanup EXIT INT TERM # Ensure cleanup happens on script exit or interruption
 
 # Function to format timestamp for logging
 timestamp() {
   date +"%Y-%m-%d %H:%M:%S"
+}
+
+# Function to make the API request and handle response
+# Takes keyword, start_page (optional), and attempt number as arguments
+make_request() {
+  local keyword="$1"
+  local start_page="$2" # Optional start page for restarts
+  local attempt="$3"
+  local curl_output_file=$(mktemp curl_output_${keyword// /_}_${attempt}.tmp) # Unique temp file name
+  local curl_error_file=$(mktemp curl_error_${keyword// /_}_${attempt}.tmp)
+  local request_url="$SERVICE_URL"
+  local query_params=(
+    "query=$keyword"
+    "saveToGcs=true"
+    "saveImages=true"
+    "bucket=$TARGET_BUCKET"
+    "fetchAllPages=true"
+  )
+
+  # Add startPage parameter if provided (for restarts)
+  if [ -n "$start_page" ]; then
+    query_params+=("startPage=$start_page")
+    echo "$(timestamp) Attempt ${attempt}: Sending request with startPage=${start_page}..."
+  else
+    echo "$(timestamp) Attempt ${attempt}: Sending initial request..."
+  fi
+
+  # Construct the full URL with query parameters properly encoded
+  local full_url="${request_url}?"
+  local first_param=true
+  for param in "${query_params[@]}"; do
+    if [ "$first_param" = true ]; then
+      full_url+="$param"
+      first_param=false
+    else
+      full_url+="&$param"
+    fi
+  done
+
+  echo "$(timestamp) Request URL: $full_url"
+
+  # Execute curl with a long timeout (60 minutes)
+  curl -sS --fail --max-time 3600 "$full_url" > "$curl_output_file" 2> "$curl_error_file"
+  local exit_status=$?
+
+  # Store results in global variables for the main loop to access
+  # Using unique names to avoid conflicts in potential recursive calls (though we avoid recursion here)
+  # Use eval to dynamically set variable names based on attempt number
+  eval "REQUEST_EXIT_STATUS_${attempt}=${exit_status}"
+  eval "REQUEST_OUTPUT_FILE_${attempt}='${curl_output_file}'"
+  eval "REQUEST_ERROR_FILE_${attempt}='${curl_error_file}'"
 }
 
 # --- Main Script ---
@@ -76,18 +129,14 @@ if [ "$FORCE_MODE" = true ]; then
   unprocessed_count=$total_count
   processed_count=0
 else
-echo "$(timestamp) Identifying unprocessed keywords..."
-# Use grep to find keywords in the extracted list that are NOT in processed_KWs.log
-# -F treats patterns as fixed strings
-# -x matches whole lines exactly
-# -v inverts the match (selects non-matching lines)
-# -f reads patterns (processed keywords) from processed_KWs.log
-grep -Fxvf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE" > "$TEMP_UNPROCESSED_FILE"
+  echo "$(timestamp) Identifying unprocessed keywords..."
+  # Use grep to find keywords in the extracted list that are NOT in processed_KWs.log
+  grep -Fxvf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE" > "$TEMP_UNPROCESSED_FILE"
 
-unprocessed_count=$(wc -l < "$TEMP_UNPROCESSED_FILE")
-processed_count=$(grep -cFxf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE") # Count lines in log that ARE in the master list
+  unprocessed_count=$(wc -l < "$TEMP_UNPROCESSED_FILE")
+  processed_count=$(grep -cFxf "$PROCESSED_LOG" "$TEMP_ALL_KEYWORDS_FILE") # Count lines in log that ARE in the master list
 
-echo "$(timestamp) Found $unprocessed_count keywords to process out of $total_count total. $processed_count already processed."
+  echo "$(timestamp) Found $unprocessed_count keywords to process out of $total_count total. $processed_count already processed."
 fi
 
 if [ "$unprocessed_count" -eq 0 ]; then
@@ -111,138 +160,122 @@ while IFS= read -r keyword || [[ -n "$keyword" ]]; do
   echo "$(timestamp) [${current_kw_num}/${unprocessed_count}] Processing keyword: '$keyword'"
   echo "Started at $(date)"
 
-  # Initialize retry counter
-  retry_count=0
+  # --- Request Loop with Restart Logic ---
   success=false
+  start_page="" # Start with no specific start page
+  restart_count=0
 
-  while [ $retry_count -lt $MAX_RETRY_COUNT ] && [ "$success" = false ]; do
-    if [ $retry_count -gt 0 ]; then
-      echo "$(timestamp) Retry attempt $retry_count for keyword '$keyword'"
-      # Exponential backoff for retries: 30s, 2m, 5m
-      backoff_time=$((30 * (2 ** (retry_count - 1))))
-      echo "$(timestamp) Waiting $backoff_time seconds before retrying..."
-      sleep $backoff_time
-    fi
+  while [ "$restart_count" -le "$MAX_RESTARTS" ]; do
+    attempt=$((restart_count + 1))
+    make_request "$keyword" "$start_page" "$attempt"
 
-    # Prepare output files
-    curl_output_file=$(mktemp)
-    curl_error_file=$(mktemp)
+    # Retrieve results from global variables set by make_request
+    current_exit_status=$(eval echo \$REQUEST_EXIT_STATUS_${attempt})
+    current_output_file=$(eval echo \$REQUEST_OUTPUT_FILE_${attempt})
+    current_error_file=$(eval echo \$REQUEST_ERROR_FILE_${attempt})
 
-    echo "$(timestamp) Sending request to service and waiting for completion..."
-    echo "$(timestamp) Request URL: $SERVICE_URL?query=$keyword&saveToGcs=true&saveImages=true&bucket=$TARGET_BUCKET&fetchAllPages=true&imageConcurrency=4&maxMemoryGB=4"
-    
-    # Execute curl with a long timeout (60 minutes)
-    # The API is synchronous, so this will block until the entire scraping job is complete
-    curl -sS --fail \
-      --max-time 3600 \
-      --url-query "query=$keyword" \
-      --url-query "saveToGcs=true" \
-      --url-query "saveImages=true" \
-      --url-query "bucket=$TARGET_BUCKET" \
-      --url-query "fetchAllPages=true" \
-      --url-query "imageConcurrency=4" \
-      --url-query "maxMemoryGB=8" \
-      "$SERVICE_URL" > "$curl_output_file" 2> "$curl_error_file"
-    
-    # Check curl exit status
-    exit_status=$?
-
-    if [ $exit_status -eq 0 ]; then
-      # Check if the response is a valid JSON and contains success field
-      if jq -e '.success' "$curl_output_file" > /dev/null 2>&1; then
-        is_success=$(jq -r '.success' "$curl_output_file")
-        
-        if [ "$is_success" = "true" ]; then
-          # Extract some information from the response to confirm success
-          total_items=$(jq -r '.pagination.totalItems // 0' "$curl_output_file")
-          total_results=$(jq -r '.data.totalResults // 0' "$curl_output_file")
-          
-          echo "$(timestamp) Successfully processed keyword: '$keyword'"
-          echo "$(timestamp) Found $total_items total items, $total_results results returned"
-          
-          # If we have scrapingSummary, extract and display that information
-          if jq -e '.scrapingSummary' "$curl_output_file" > /dev/null 2>&1; then
-            pages_processed=$(jq -r '.scrapingSummary.pagesProcessed // 0' "$curl_output_file")
-            pages_skipped=$(jq -r '.scrapingSummary.skippedExistingPages // 0' "$curl_output_file")
-            total_pages=$(jq -r '.scrapingSummary.totalPagesFound // 0' "$curl_output_file")
-            
-            echo "$(timestamp) Scraping summary: Processed $pages_processed pages, skipped $pages_skipped existing pages, found $total_pages total pages"
+    if [ "$current_exit_status" -eq 0 ]; then
+      # Check for restartNeeded flag first
+      if jq -e '.restartNeeded == true' "$current_output_file" > /dev/null 2>&1; then
+        start_page=$(jq -r '.startPage // ""' "$current_output_file")
+        if [ -n "$start_page" ]; then
+          echo "$(timestamp) Attempt ${attempt}: Received restart signal. Will restart from page $start_page."
+          restart_count=$((restart_count + 1))
+          # Clean up temp files for this attempt before the next one
+          rm -f "$current_output_file" "$current_error_file"
+          # Check if we exceeded max restarts
+          if [ "$restart_count" -gt "$MAX_RESTARTS" ]; then
+             echo "$(timestamp) Maximum restart attempts ($MAX_RESTARTS) reached for keyword '$keyword'. Marking as failed."
+             success=false
+             break # Exit the inner while loop
           fi
-          
-          # In force mode, we need to remove previous entries before adding
-          if [ "$FORCE_MODE" = true ]; then
-            # Make a temporary file for the new log
-            TEMP_LOG_FILE=$(mktemp)
-            # Remove existing entry for this keyword if present
-            grep -Fxv "$keyword" "$PROCESSED_LOG" > "$TEMP_LOG_FILE"
-            # Replace the log file with our filtered version
-            mv "$TEMP_LOG_FILE" "$PROCESSED_LOG"
-          fi
-          
-          # Add the successfully processed keyword to the log file
-          echo "$keyword" >> "$PROCESSED_LOG"
-          success=true
+          # Continue to the next iteration of the while loop to make the new request
+          continue
         else
-          echo "$(timestamp) API returned success=false for keyword: '$keyword'"
-          # Show error message if available
-          if jq -e '.error' "$curl_output_file" > /dev/null 2>&1; then
-            error_msg=$(jq -r '.error' "$curl_output_file")
-            echo "$(timestamp) Error message: $error_msg"
-          fi
-          # This is an API-level failure, retry
-          retry_count=$((retry_count + 1))
+          echo "$(timestamp) Attempt ${attempt}: Received restartNeeded=true but no startPage provided. Treating as failure."
+          success=false
+          break # Exit the inner while loop
         fi
+      # If no restart needed, check for overall success
+      elif jq -e '.success == true' "$current_output_file" > /dev/null 2>&1; then
+        total_items=$(jq -r '.pagination.totalItems // 0' "$current_output_file")
+        total_results=$(jq -r '.data.totalResults // 0' "$current_output_file")
+        echo "$(timestamp) Attempt ${attempt}: Successfully processed keyword: '$keyword'"
+        echo "$(timestamp) Found $total_items total items, $total_results results returned"
+        if jq -e '.scrapingSummary' "$current_output_file" > /dev/null 2>&1; then
+           pages_processed=$(jq -r '.scrapingSummary.pagesProcessed // 0' "$current_output_file")
+           pages_skipped=$(jq -r '.scrapingSummary.skippedExistingPages // 0' "$current_output_file")
+           total_pages=$(jq -r '.scrapingSummary.totalPagesFound // 0' "$current_output_file")
+           echo "$(timestamp) Scraping summary: Processed $pages_processed pages, skipped $pages_skipped existing pages, found $total_pages total pages"
+        fi
+        success=true
+        break # Exit the inner while loop, keyword processed successfully
       else
-        echo "$(timestamp) Invalid or unexpected JSON response for keyword: '$keyword'"
-        # This could be a connection issue or a corrupted response, retry
-        retry_count=$((retry_count + 1))
+        echo "$(timestamp) Attempt ${attempt}: API returned success=false or unexpected JSON for keyword: '$keyword'"
+        if jq -e '.error' "$current_output_file" > /dev/null 2>&1; then
+          error_msg=$(jq -r '.error' "$current_output_file")
+          echo "$(timestamp) Error message: $error_msg"
+        else
+          echo "$(timestamp) Response content:"
+          cat "$current_output_file"
+        fi
+        success=false
+        break # Exit the inner while loop, keyword failed
       fi
     else
-      echo "$(timestamp) Error: Failed to process keyword: '$keyword'"
-      echo "$(timestamp) Curl command exited with status $exit_status."
+      echo "$(timestamp) Attempt ${attempt}: Error processing keyword: '$keyword'"
+      echo "$(timestamp) Curl command exited with status $current_exit_status."
       echo "$(timestamp) Error details (from stderr):"
-      cat "$curl_error_file"
-      
-      # Check if this was a timeout (exit code 28)
-      if [ $exit_status -eq 28 ]; then
-        echo "$(timestamp) Request timed out after 60 minutes. This suggests a very large dataset or service issues."
+      cat "$current_error_file"
+      if [ "$current_exit_status" -eq 28 ]; then
+        echo "$(timestamp) Request timed out after 60 minutes."
       fi
-      
-      # This is a connection-level failure, retry
-      retry_count=$((retry_count + 1))
+      success=false
+      break # Exit the inner while loop, keyword failed due to curl error
     fi
 
-    # Clean up temp files for this attempt
-    rm -f "$curl_output_file" "$curl_error_file"
-  
-  done
-  
-  # After all retries, check if we succeeded
-  if [ "$success" = false ]; then
-    echo "$(timestamp) WARNING: Failed to process keyword '$keyword' after $MAX_RETRY_COUNT attempts."
-    echo "$(timestamp) Adding to processed log to avoid endless retries in future runs."
-    
-    # In force mode, remove any previous entries of this keyword first
+    # Should not be reached if break conditions work correctly, but acts as safety
+    break
+
+  done # End of while loop for restarts
+
+  # Clean up temp files for the last attempt
+  rm -f "$current_output_file" "$current_error_file"
+
+  # --- Log Result ---
+  # Decide whether to add to processed log based on final 'success' status
+  if [ "$success" = true ]; then
+     # Ensure removal if FORCE_MODE is on, then add
     if [ "$FORCE_MODE" = true ]; then
       TEMP_LOG_FILE=$(mktemp)
       grep -Fxv "$keyword" "$PROCESSED_LOG" > "$TEMP_LOG_FILE"
       mv "$TEMP_LOG_FILE" "$PROCESSED_LOG"
     fi
-    
+    echo "$keyword" >> "$PROCESSED_LOG"
+    echo "$(timestamp) Keyword '$keyword' marked as successfully processed."
+  else
+    echo "$(timestamp) WARNING: Keyword '$keyword' failed after all attempts (including restarts)."
+    echo "$(timestamp) Adding to processed log to avoid retrying in future runs (unless --force is used)."
+    # Ensure removal if FORCE_MODE is on, then add
+    if [ "$FORCE_MODE" = true ]; then
+      TEMP_LOG_FILE=$(mktemp)
+      grep -Fxv "$keyword" "$PROCESSED_LOG" > "$TEMP_LOG_FILE"
+      mv "$TEMP_LOG_FILE" "$PROCESSED_LOG"
+    fi
     echo "$keyword" >> "$PROCESSED_LOG"
   fi
-  
-  echo "$(timestamp) Completed at $(date)"
-  echo "$(timestamp) Taking a short break before the next keyword to allow resources to clean up..."
-  sleep 10  # Short break between keywords
+
+  echo "$(timestamp) Completed processing for keyword '$keyword' at $(date)"
+  echo "$(timestamp) Taking a short break before the next keyword..."
+  sleep 10 # Short break between keywords
   echo "=============================================================="
 
 done < "$TEMP_UNPROCESSED_FILE" # Read from the temp file containing only unprocessed KWs
 
 echo "=============================================================="
-echo "$(timestamp) All keywords processing attempts completed."
-echo "$(timestamp) Total keywords processed: $current_kw_num"
-echo "$(timestamp) Check $PROCESSED_LOG for the list of completed keywords."
+echo "$(timestamp) All keyword processing attempts completed."
+echo "$(timestamp) Total unprocessed keywords attempted: $current_kw_num"
+echo "$(timestamp) Check $PROCESSED_LOG for the list of keywords attempted in this run."
 echo "=============================================================="
 
 # Cleanup is handled by the trap

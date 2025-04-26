@@ -57,7 +57,7 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
   
   // Contador para páginas vacías consecutivas
   let consecutiveEmptyPages = 0;
-  const maxConsecutiveEmptyPages = 10;
+  let lastSuccessfulPage = 1; // Track the last page with results
   
   try {
     // Verificar si tenemos resultados iniciales válidos
@@ -123,13 +123,6 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
       if (processedPages.has(pageNum)) {
         console.log(`Página ${pageNum} ya procesada anteriormente, omitiendo...`);
         continue;
-      }
-      
-      // Detener si hay demasiadas páginas vacías consecutivas
-      if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
-        console.log(`⚠️ Se encontraron ${consecutiveEmptyPages} páginas vacías consecutivas. Finalizando la paginación.`);
-        console.log(`Probablemente se han obtenido todos los resultados disponibles.`);
-        break;
       }
       
       // Marcar como procesada
@@ -330,10 +323,19 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
             successfulPages.add(pageNum);
             failedPages.delete(pageNum); // Eliminar de fallidos si estaba
             consecutiveEmptyPages = 0; // Resetear contador de páginas vacías
+            lastSuccessfulPage = pageNum; // Update last successful page
           } else {
             console.warn(`❌ Página ${pageNum} no contiene resultados diferentes, posible problema de paginación`);
             consecutiveEmptyPages++; // Incrementar contador de páginas vacías
-            console.log(`Páginas vacías consecutivas: ${consecutiveEmptyPages}/${maxConsecutiveEmptyPages}`);
+            // Check if this is the first empty page
+            if (consecutiveEmptyPages >= 1) {
+              console.log(`⚠️ Detectada página ${pageNum} vacía. Señalando para reiniciar desde la página ${lastSuccessfulPage + 1}.`);
+              return {
+                restartNeeded: true,
+                startPage: lastSuccessfulPage + 1,
+                currentResults: allResults // Return results accumulated so far
+              };
+            }            
           }
           
           // Actualizar metadatos en el resultado acumulado
@@ -362,7 +364,15 @@ async function handlePagination(browser, params, firstPageResults, initialCookie
           console.error(`❌ Error al procesar la página ${pageNum}: formato de respuesta inválido`);
           failedPages.add(pageNum);
           consecutiveEmptyPages++; // Incrementar contador de páginas vacías
-          console.log(`Páginas vacías consecutivas: ${consecutiveEmptyPages}/${maxConsecutiveEmptyPages}`);
+          // Check if this is the first empty page
+          if (consecutiveEmptyPages >= 1) {
+            console.log(`⚠️ Detectada página ${pageNum} con respuesta inválida. Señalando para reiniciar desde la página ${lastSuccessfulPage + 1}.`);
+            return {
+              restartNeeded: true,
+              startPage: lastSuccessfulPage + 1,
+              currentResults: allResults // Return results accumulated so far
+            };
+          }          
         }
       } catch (error) {
         console.error(`❌ Error en la página ${pageNum}: ${error.message}`);
