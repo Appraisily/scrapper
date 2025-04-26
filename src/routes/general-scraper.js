@@ -8,8 +8,7 @@ const router = express.Router();
 const { constructSearchUrl } = require('../scrapers/invaluable/url-builder');
 const SearchStorageService = require('../utils/search-storage');
 
-// Initialize the storage service
-const searchStorage = new SearchStorageService();
+// No need for global initialization - we'll instantiate per keyword
 
 /**
  * Build parameters for a search
@@ -50,6 +49,7 @@ router.get('/scrape', async (req, res) => {
     console.log(`Starting scrape with keyword: ${keyword}, query: ${query}`);
     
     // Check if folder already exists in GCS
+    const searchStorage = SearchStorageService.getInstance({ keyword });
     const folderExists = await searchStorage.folderExists(keyword, query);
     if (folderExists) {
       console.log(`Folder already exists for keyword="${keyword}", query="${query}". Skipping scrape.`);
@@ -232,6 +232,7 @@ router.get('/scrape-artist', async (req, res) => {
     const query = artist;
     
     // Check if folder already exists in GCS
+    const searchStorage = SearchStorageService.getInstance({ keyword });
     const folderExists = await searchStorage.folderExists(keyword, query);
     if (folderExists) {
       console.log(`Folder already exists for artist="${artist}". Skipping scrape.`);

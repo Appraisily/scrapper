@@ -11,8 +11,59 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 // Configure puppeteer with stealth plugin to avoid detection
 puppeteer.use(StealthPlugin());
 
+// Instance pool for keyword-based instances
+const instancePool = new Map();
+
+// Counter for log deduplication
+let initializedCount = 0;
+
 class SearchStorageService {
+  /**
+   * Get an instance for a specific keyword
+   * @param {Object} options - Options including keyword and bucketName
+   * @returns {SearchStorageService} - Instance for this keyword
+   */
+  static getInstance(options = {}) {
+    const keyword = options.keyword || 'global';
+    
+    // Check if an instance for this keyword already exists
+    if (instancePool.has(keyword)) {
+      return instancePool.get(keyword);
+    }
+    
+    // If not, create a new instance
+    if (initializedCount === 0) {
+      console.log('Creating new SearchStorageService instance pool');
+      initializedCount++;
+    }
+    
+    const instance = new SearchStorageService(options);
+    instancePool.set(keyword, instance);
+    return instance;
+  }
+
+  // Method to get all created instances
+  static getAllInstances() {
+    return Array.from(instancePool.values());
+  }
+  
+  // Method to clear all instances - useful for testing
+  static clearAllInstances() {
+    // Close all browsers first
+    for (const instance of instancePool.values()) {
+      if (instance.browser) {
+        try {
+          instance.browser.close().catch(() => {});
+        } catch (e) { /* ignore */ }
+      }
+    }
+    instancePool.clear();
+    initializedCount = 0;
+  }
+
   constructor(options = {}) {
+    this.keyword = options.keyword || 'global';
+    
     // Use STORAGE_BUCKET environment variable, or the provided bucket name, 
     // or use "invaluable-html-archive-images" as the hardcoded fallback value
     this.bucketName = process.env.STORAGE_BUCKET || 
@@ -59,7 +110,11 @@ class SearchStorageService {
     // Tab pool for image downloads
     this.imageTabPool = [];
     this.maxImageTabs = parseInt(process.env.MAX_IMAGE_TABS || '5', 10); // Default 5 tabs max
-    console.log(`SearchStorageService initialized with max ${this.maxImageTabs} image tabs`);
+    
+    // Only log once per instance, not per batch
+    if (initializedCount <= 1) {
+      console.log(`SearchStorageService initialized with max ${this.maxImageTabs} image tabs for keyword: ${this.keyword}`);
+    }
   }
   
   /**

@@ -5,8 +5,9 @@ const { handleSearch } = require('./search-handler');
 const { handlePagination } = require('./pagination/index');
 
 class InvaluableScraper {
-  constructor() {
-    this.browser = new BrowserManager();
+  constructor(options = {}) {
+    this.keyword = options.keyword || 'global';
+    this.browser = BrowserManager.getInstance(this.keyword);
     this.initialized = false;
     this.config = {
       NAVIGATION_TIMEOUT: 30000,
@@ -16,17 +17,17 @@ class InvaluableScraper {
 
   async initialize() {
     if (this.initialized) {
-      console.log('Scraper ya inicializado');
+      console.log(`Scraper for keyword "${this.keyword}" already initialized`);
       return;
     }
 
     try {
-      console.log('Inicializando navegador...');
+      console.log(`Initializing browser for keyword "${this.keyword}"...`);
       await this.browser.initialize();
       this.initialized = true;
-      console.log('Navegador inicializado correctamente');
+      console.log(`Browser for keyword "${this.keyword}" initialized successfully`);
     } catch (error) {
-      console.error('Error al inicializar el navegador:', error);
+      console.error(`Error initializing browser for keyword "${this.keyword}":`, error);
       throw error;
     }
   }

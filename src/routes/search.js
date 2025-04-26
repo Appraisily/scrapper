@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const SearchStorageService = require('../utils/search-storage');
 
-// Initialize SearchStorageService
-const searchStorage = new SearchStorageService();
+// Initialize SearchStorageService using the singleton pattern for global operations
+const searchStorage = SearchStorageService.getInstance({ keyword: 'global' });
 
 function formatPrice(hit) {
   return {
@@ -360,8 +360,11 @@ router.get('/', async (req, res) => {
                                             try {
                                                 // Get the browser instance if possible
                                                 const storage = customBucket 
-                                                  ? new SearchStorageService({bucketName: customBucket}) 
-                                                  : searchStorage;
+                                                  ? SearchStorageService.getInstance({ 
+                                                      keyword: category, 
+                                                      bucketName: customBucket 
+                                                    }) 
+                                                  : SearchStorageService.getInstance({ keyword: category });
                                                 
                                                 // Try to get the browser instance
                                                 let browserInstance = null;
@@ -487,8 +490,11 @@ router.get('/', async (req, res) => {
         
         // Create storage instance with custom options if needed
         const storage = customBucket 
-          ? new SearchStorageService(storageOptions) 
-          : searchStorage;
+          ? SearchStorageService.getInstance({ 
+              keyword: category, 
+              bucketName: customBucket 
+            }) 
+          : SearchStorageService.getInstance({ keyword: category });
                 
         // Check if we should also save images 
         const saveImages = req.query.saveImages === 'true';
@@ -648,8 +654,11 @@ router.post('/direct', express.json({ limit: '10mb' }), async (req, res) => {
         
         // Create storage instance with custom options if needed
         const storage = customBucket 
-          ? new SearchStorageService(storageOptions) 
-          : searchStorage;
+          ? SearchStorageService.getInstance({ 
+              keyword: category, 
+              bucketName: customBucket 
+            }) 
+          : SearchStorageService.getInstance({ keyword: category });
         
         // Check if we should also save images
         const saveImages = req.body.saveImages === true;
@@ -795,8 +804,11 @@ router.post('/combine-pages', express.json({ limit: '10mb' }), async (req, res) 
         
         // Create storage instance with custom options if needed
         const storage = customBucket 
-          ? new SearchStorageService(storageOptions) 
-          : searchStorage;
+          ? SearchStorageService.getInstance({ 
+              keyword: category, 
+              bucketName: customBucket 
+            }) 
+          : SearchStorageService.getInstance({ keyword: category });
         
         // Check if we should also save images
         const saveImages = req.body.saveImages === true;

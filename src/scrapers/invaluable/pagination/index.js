@@ -19,9 +19,6 @@ const {
 } = require('./results-processor');
 const SearchStorageService = require('../../../utils/search-storage');
 
-// Initialize the storage service
-const searchStorage = new SearchStorageService();
-
 /**
  * Helper function to wait for a specific time
  * @param {Object} page - Page object
@@ -45,6 +42,12 @@ async function wait(page, ms) {
  */
 async function handlePagination(browser, params, firstPageResults, initialCookies, maxPages = 100, config = {}) {
   console.log('🔄 Iniciando manejo de paginación');
+  
+  // Get the keyword from params for instance management
+  const keyword = params.query || params.keyword || 'global';
+  
+  // Get the SearchStorageService instance for this keyword
+  const searchStorage = SearchStorageService.getInstance({ keyword });
   
   // Initialize variables outside the try block to avoid "undefined" errors in the finally block
   let allResults = { error: 'Resultados no inicializados' };

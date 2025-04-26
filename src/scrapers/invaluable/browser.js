@@ -40,10 +40,63 @@ const browserConfig = {
 
 puppeteer.use(StealthPlugin());
 
+// Instance pool for keyword-based instances
+const instancePool = new Map();
+
+// Counter for log deduplication
+let initializedCount = 0;
+
 class BrowserManager {
-  constructor() {
+  /**
+   * Get a browser manager instance for a specific keyword
+   * @param {string} keyword - The keyword this instance is for
+   * @returns {BrowserManager} - The instance for this keyword
+   */
+  static getInstance(keyword = 'global') {
+    // Check if an instance for this keyword already exists
+    if (instancePool.has(keyword)) {
+      return instancePool.get(keyword);
+    }
+    
+    // If not, create a new instance
+    if (initializedCount === 0) {
+      console.log('Creating new BrowserManager instance pool');
+      initializedCount++;
+    }
+    
+    const instance = new BrowserManager(keyword);
+    instancePool.set(keyword, instance);
+    return instance;
+  }
+
+  // Method to get all created instances
+  static getAllInstances() {
+    return Array.from(instancePool.values());
+  }
+  
+  // Method to clear all instances - useful for testing
+  static clearAllInstances() {
+    // Close all browsers first
+    for (const instance of instancePool.values()) {
+      if (instance.browser) {
+        try {
+          instance.close().catch(() => {});
+        } catch (e) { /* ignore */ }
+      }
+    }
+    instancePool.clear();
+    initializedCount = 0;
+  }
+
+  constructor(keyword = 'global') {
+    this.keyword = keyword;
     this.browser = null;
     this.pages = new Map();
+    
+    // Only log once per instance creation
+    if (initializedCount <= 1) {
+      console.log(`BrowserManager initialized for keyword: ${this.keyword}`);
+    }
   }
 
   // Add init method as an alias to initialize for compatibility with the category scraper

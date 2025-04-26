@@ -93,7 +93,7 @@ async function startScrapingJob(config) {
   console.log(`Will scrape up to ${config.maxPages} pages`);
   
   // Initialize browser
-  const browser = new BrowserManager();
+  const browser = BrowserManager.getInstance();
   
   try {
     await browser.initialize();
