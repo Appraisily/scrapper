@@ -1,0 +1,50 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Scraper Architecture
+
+## Core Components
+
+1. **InvaluableScraper** - Main scraper class
+   - Located in [src/scrapers/invaluable/scraper.js](mdc:src/scrapers/invaluable/scraper.js)
+   - Handles search requests, pagination, and image downloading
+   - Exported through [src/scrapers/invaluable/index.js](mdc:src/scrapers/invaluable/index.js)
+
+2. **BrowserManager** - Browser automation with Puppeteer
+   - Handles browser instances, cookies, protection challenges
+   - Uses puppeteer-extra with stealth plugins for detection avoidance
+   - Implements page reuse and resource management
+
+3. **SearchHandler** - Process search results and extract data
+   - Parses HTML and JSON responses from Invaluable
+   - Extracts item details, images, and metadata
+
+4. **PaginationManager** - Handles pagination logic
+   - Tracks progress through pages
+   - Detects total page count
+   - Manages checkpoint resumption
+
+5. **ArtistDirectoryScraper** - Specialized scraper for artist directory
+   - Located in [src/scrapers/artist-directory-scraper.js](mdc:src/scrapers/artist-directory-scraper.js)
+   - Scrapes the artist directory by letter and subcombinations
+
+## Storage Components
+
+- **SearchStorageService** - Google Cloud Storage integration
+  - Located in [src/utils/search-storage.js](mdc:src/utils/search-storage.js)
+  - Saves search results, JSON data, and images to GCS
+  - Implements efficient batched operations
+
+## Execution Flow
+
+1. User makes a request to the API
+2. Express router ([src/routes/search.js](mdc:src/routes/search.js)) handles the request
+3. InvaluableScraper instance is created or reused
+4. Scraper launches browser and navigates to search URL
+5. Search results are captured and processed
+6. If pagination is requested, the scraper continues to next pages
+7. Results are saved to GCS if requested
+8. Images are downloaded and saved if requested
+9. Formatted response is returned to the client
