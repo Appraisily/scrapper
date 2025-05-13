@@ -9,10 +9,11 @@ A powerful Node.js application for scraping auction data from Invaluable with re
   - Sophisticated cookie and session management
   - Request/response interception for capturing API data
   - Automatic protection challenge handling
-  - Browser instance reuse for efficient resource utilization
+  - Keyword-based browser instances for efficient resource isolation
 
 - **Intelligent Pagination**
-  - Auto-resumable data collection with checkpoints
+  - Auto-resumable data collection with automatic restart on blank pages
+  - Self-recovery when encountering empty result pages
   - Progress tracking and detailed logging
   - Metadata-driven page detection and navigation
   - Skip already processed pages for faster re-runs
@@ -20,6 +21,7 @@ A powerful Node.js application for scraping auction data from Invaluable with re
 
 - **Comprehensive Image Downloading**
   - Browser-based image downloading that bypasses Cloudflare protection
+  - Tab pooling system for efficient tab reuse
   - Automatic image saving to Google Cloud Storage
   - Structured storage paths for easy retrieval
   - Optimized batching to prevent timeouts
@@ -40,7 +42,7 @@ A powerful Node.js application for scraping auction data from Invaluable with re
   - Batch processing of multiple requests
 
 - **Artist List Scraper**
-  - Comprehensive collection of artist data from A to C
+  - Comprehensive collection of artist data
   - Alphabetical navigation through nested sub-letter pages
   - Extraction of artist names and URLs
   - Multiple output formats (JSON, TXT)
@@ -63,12 +65,20 @@ A powerful Node.js application for scraping auction data from Invaluable with re
 │   │       ├── auth.js            # Authentication handling
 │   │       ├── artist-list/       # Artist list scraper
 │   │       └── pagination/        # Pagination handling
+│   │           ├── index.js       # Main pagination logic
+│   │           ├── pagination-manager.js # Manages pagination state
+│   │           ├── navigation-params.js  # Handling navigation parameters
+│   │           ├── request-interceptor.js # Intercepts and modifies requests
+│   │           ├── cookie-manager.js     # Manages cookies for requests
+│   │           └── results-processor.js  # Processes pagination results
 │   ├── routes/                    # API endpoints
 │   │   ├── search.js              # Search endpoint handlers
 │   │   ├── scraper.js             # Scraper job management
 │   │   └── general-scraper.js     # General scraping endpoints
 │   ├── examples/                  # Example implementations
 │   └── utils/                     # Utility functions
+│       ├── search-storage.js      # Google Cloud Storage integration
+│       └── storage-manager.js     # Storage management utilities
 ├── scripts/                       # Shell scripts for operations
 ├── debug_json/                    # JSON debug output directory
 ├── artist_directory/              # Artist data storage
@@ -99,75 +109,99 @@ A powerful Node.js application for scraping auction data from Invaluable with re
 
 1. **InvaluableScraper** (src/scrapers/invaluable/index.js, scraper.js)
    - Main scraper class that orchestrates the entire scraping process
+   - Maintains keyword-specific browser instances
+   - Implements automatic restart logic for blank pages
    - Methods:
      - `initialize()`: Sets up the browser instance and configurations
      - `close()`: Closes browser instances and resources
      - `search(params)`: Performs a search with given parameters
-     - `getDetails(url)`: Fetches details for a specific auction item
-     - `downloadImage(imageUrl, savePath)`: Downloads and stores images
+     - `searchAllPages(params, cookies, maxPages)`: Fetches all pages with auto-restart
 
 2. **BrowserManager** (src/scrapers/invaluable/browser.js)
    - Handles browser automation with Puppeteer
+   - Implements keyword-based instance pool pattern
    - Methods:
-     - `launch()`: Starts a browser instance with stealth plugins
+     - `getInstance(keyword)`: Returns a browser instance for the specific keyword
+     - `initialize()`: Starts a browser instance with stealth plugins
      - `getPage()`: Returns an active page or creates a new one
-     - `closePage(page)`: Safely closes a page
-     - `interceptRequest(page, pattern, handler)`: Sets up request interception
-     - `rotateUserAgent()`: Changes user agent for detection avoidance
-     - `handleProtectionChallenge(page)`: Handles anti-bot security measures
-     - `restartBrowser()`: Restarts browser to free resources
+     - `createTab(name)`: Creates a new tab with specified name
+     - `closeTab(name)`: Safely closes a named tab
+     - `close()`: Shuts down the browser instance
+     - `handleProtection()`: Handles anti-bot security measures
 
-3. **UrlBuilder** (src/scrapers/invaluable/url-builder.js)
-   - Constructs search and filter URLs
+3. **SearchStorageService** (src/utils/search-storage.js)
+   - Manages Google Cloud Storage operations
+   - Implements keyword-based instance pooling
+   - Implements tab pooling for efficient image downloading
    - Methods:
-     - `buildSearchUrl(params)`: Creates search URLs with filters
-     - `buildItemUrl(lotId)`: Generates item detail URLs
-     - `parsePagination(html)`: Extracts pagination data
+     - `getInstance(options)`: Returns storage instance for specific keyword
+     - `saveImage(imageUrl, category, lotNumber)`: Downloads and saves images
+     - `savePageResults(category, pageNumber, rawResults)`: Saves page results
+     - `saveAllImages(searchResults, category)`: Processes and saves all images
+     - `closeBrowser()`: Cleans up browser resources
 
-4. **SearchHandler** (src/scrapers/invaluable/search-handler.js)
-   - Processes search results and extracting data
+4. **PaginationHandler** (src/scrapers/invaluable/pagination/index.js)
+   - Handles pagination and empty page detection
+   - Implements restart signaling when blank pages are detected
    - Methods:
-     - `processSearchResults(html)`: Extracts item data from search results
-     - `processItemDetail(html)`: Parses item detail pages
-     - `extractImageUrls(html)`: Gets image URLs from HTML
-     - `saveToStorage(data, bucket, path)`: Saves data to Google Cloud Storage
-
-5. **PaginationManager** (src/scrapers/invaluable/pagination/)
-   - Handles pagination logic and progress tracking
-   - Methods:
-     - `getCurrentPage(html)`: Gets current page number
-     - `getTotalPages(html)`: Gets total available pages
-     - `getNextPageUrl(html)`: Gets URL for next page
-     - `trackProgress(currentPage, totalPages)`: Records progress
-
-6. **AuthManager** (src/scrapers/invaluable/auth.js)
-   - Manages cookies, sessions, and authentication
-   - Methods:
-     - `login(page)`: Performs login if needed
-     - `refreshCookies(page)`: Updates authentication cookies
-     - `checkAuthStatus(page)`: Verifies authentication status
-
-7. **ArtistDirectoryScraper** (src/scrapers/artist-directory-scraper.js)
-   - Specialized scraper for artist directory
-   - Methods:
-     - `scrapeAll()`: Scrapes all artists
-     - `scrapePrimaryLetter(letter)`: Scrapes a specific letter section
-     - `scrapeLetterCombination(primary, secondary)`: Scrapes combination pages
-     - `parseArtistList(html)`: Extracts artist information
+     - `handlePagination()`: Manages the pagination process
+     - Returns restart signal with info when blank page is detected
 
 ### API Endpoints (src/routes/)
 
 1. **Search Endpoints** (search.js)
    - `GET /api/search`: Main search endpoint with multiple parameters
-   - `GET /api/search/item/:lotId`: Get details for specific item
+   - Creates keyword-specific scrapers for each request
 
 2. **Scraper Job Management** (scraper.js)
    - `POST /api/scraper/start`: Start a background scraping job
    - `GET /api/scraper/status/:jobId`: Check job status
 
 3. **General Scraper Endpoints** (general-scraper.js)
-   - `GET /api/invaluable/category/:category`: Category-specific scraping
-   - `GET /api/invaluable/furniture/list`: List furniture subcategories
+   - `GET /api/invaluable/scrape`: General scraping endpoint
+   - `GET /api/invaluable/scrape-artist`: Artist-specific scraping
+
+## Latest Enhancements
+
+### Keyword-Based Resource Management
+
+The system now implements an advanced keyword-based resource management approach:
+
+1. **Isolated Browser Instances**
+   - Each keyword gets its own isolated browser instance
+   - Prevents resource contention between different keyword searches
+   - Ensures proper separation of cookies and sessions
+
+2. **Tab Pooling for Image Downloads**
+   - Reuses a pool of browser tabs for image downloads
+   - Limits the maximum number of tabs per instance (default: 5)
+   - Properly resets tabs between uses
+   - Significantly reduces system resource usage
+
+3. **Automatic Restart on Blank Pages**
+   - Detects when a page returns no new results
+   - Automatically restarts the browser session
+   - Continues pagination from the problematic page
+   - Preserves previously collected results
+
+4. **Self-Healing Pagination**
+   - When a blank page is encountered, the system will:
+     - Signal the need for a restart with the specific page number
+     - Close and reinitialize the browser to clear any session issues
+     - Restart from the problematic page
+     - Merge new results with previously collected data
+     - Continue pagination from that point
+
+### Resource Optimization
+
+The application includes dynamic resource scaling based on available memory:
+
+| Memory Configuration | Image Tab Pool Size | Browser Restart Frequency |
+|---------------------|---------------------|---------------------------|
+| 2GB RAM | 3 tabs | Every ~30 images |
+| 4GB RAM | 5 tabs | Every ~60 images |
+| 8GB RAM | 8 tabs | Every ~120 images |
+| 16GB RAM | 12 tabs | Every ~240 images |
 
 ## Environment Variables & Configuration
 
@@ -177,15 +211,11 @@ The application uses the following environment variables:
 |----------|-------------|---------|
 | `PORT` | Server port | 8080 |
 | `GOOGLE_CLOUD_PROJECT` | GCP project ID | (required for GCS) |
-| `STORAGE_BUCKET` | Default GCS bucket for storage | invaluable-html-archive |
+| `STORAGE_BUCKET` | Default GCS bucket for storage | invaluable-html-archive-images |
 | `MAX_MEMORY_GB` | Maximum memory allocation | Auto-detected |
 | `IMAGE_CONCURRENCY` | Number of simultaneous downloads | Based on memory |
+| `MAX_IMAGE_TABS` | Maximum tabs in the pool per keyword | 5 |
 | `ENVIRONMENT` | Deployment environment (cloud/local) | Detected |
-| `HEADLESS` | Run browser in headless mode | true |
-| `DEBUG` | Enable debug logging | false |
-| `REQUEST_TIMEOUT` | Request timeout in milliseconds | 30000 |
-| `PAGE_LOAD_TIMEOUT` | Page load timeout in milliseconds | 60000 |
-| `NAVIGATION_TIMEOUT` | Navigation timeout in milliseconds | 90000 |
 
 ## Dependencies
 
@@ -198,8 +228,7 @@ The application uses the following environment variables:
     "express": "^4.18.2",
     "puppeteer": "^22.15.0",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "uuid": "^9.0.0"
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
 ```
@@ -220,34 +249,75 @@ Supports comprehensive search parameters including query, price ranges, and cate
 Enable automatic image downloading with the following parameters:
 - `saveToGcs=true` - Save results to Google Cloud Storage
 - `saveImages=true` - Download and save item images to GCS
-- `bucket` - Optional custom GCS bucket name (defaults to environment variable STORAGE_BUCKET)
+- `bucket` - Optional custom GCS bucket name
 
 Images are saved in a structured format:
 ```
 invaluable-data/{category}/{subcategory}/images/{lotNumber}_{filename}.jpg
 ```
 
-The image download feature uses browser-based downloading to bypass Cloudflare protection:
-- Reuses the existing browser session that already passed Cloudflare checks
-- Maintains cookies and authentication state during image downloads
-- Processes images in optimized batches to balance speed and resource usage
-- Uses increased timeout settings to handle large images
-- Implements page reuse strategies to minimize browser resource consumption
+### General Scraper
+```
+GET /api/invaluable/scrape
+```
+Provides a general-purpose scraping endpoint for any category or keyword.
 
-### Furniture Subcategories
-```
-GET /api/furniture/list
-GET /api/furniture/info/:subcategory
-GET /api/furniture/scrape/:subcategory
-```
-Special endpoints for retrieving furniture subcategories data.
+Parameters:
+- `keyword` - The main category or folder name
+- `query` - The specific search term or subfolder name
+- `maxPages` - Maximum pages to process
+- `fetchAllPages=true` - Fetch all available pages
 
-### Scraper Management
+### Artist Scraper
 ```
-POST /api/scraper/start
-GET /api/scraper/status/:jobId
+GET /api/invaluable/scrape-artist
 ```
-Control endpoints for starting and monitoring scraping jobs.
+Specialized endpoint for scraping artist auction results.
+
+Parameters:
+- `artist` - The artist name to scrape
+- `maxPages` - Maximum pages to process
+- `fetchAllPages=true` - Fetch all available pages
+
+## Usage Examples
+
+```bash
+# Basic search
+curl "http://localhost:8080/api/search?query=furniture"
+
+# Search with price range
+curl "http://localhost:8080/api/search?query=furniture&priceResult%5Bmin%5D=1750&priceResult%5Bmax%5D=3250"
+
+# Search with image saving
+curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true"
+
+# Search with custom storage bucket
+curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true&bucket=custom-bucket-name"
+
+# Scrape category with auto-restart on blank pages
+curl "http://localhost:8080/api/invaluable/scrape?keyword=furniture&query=chairs&fetchAllPages=true"
+
+# Scrape artist with auto-pagination
+curl "http://localhost:8080/api/invaluable/scrape-artist?artist=picasso&fetchAllPages=true"
+```
+
+## Processing Keywords with Script
+
+The `process_all_KWs.sh` script provides a powerful way to process multiple keywords in sequence:
+
+```bash
+# Process all keywords in KWs.txt
+./process_all_KWs.sh
+
+# Force reprocessing of all keywords, even if already processed
+./process_all_KWs.sh -f
+```
+
+The script features:
+- Automatic retry with restart logic when blank pages are encountered
+- Tracking of processed keywords to avoid reprocessing
+- Configurable maximum restart attempts
+- Detailed logging of progress
 
 ## Installation
 
@@ -259,28 +329,12 @@ Control endpoints for starting and monitoring scraping jobs.
 3. Configure environment variables:
    ```
    GOOGLE_CLOUD_PROJECT=your-project-id
-   STORAGE_BUCKET=invaluable-html-archive
+   STORAGE_BUCKET=invaluable-html-archive-images
    ```
 4. Start the server:
    ```bash
    npm start
    ```
-
-## Resource Requirements
-
-- **Minimum**: 2 CPUs, 2GB RAM
-- **Recommended**: 4+ CPUs, 4-8GB RAM for handling image downloads and pagination
-- **High Performance**: 8+ CPUs, 16GB RAM for large-scale concurrent image processing
-- **Storage**: Depends on data volume, but plan for at least 10GB initially
-
-The application includes dynamic resource scaling based on available memory:
-
-| Memory Configuration | Concurrent Image Downloads | Browser Restart Frequency |
-|---------------------|---------------------------|---------------------------|
-| 2GB RAM | 3 (in Cloud Run), 2 (local) | Every ~30 images |
-| 4GB RAM | 6 (in Cloud Run), 4 (local) | Every ~60 images |
-| 8GB RAM | 10 (in Cloud Run), 6 (local) | Every ~120 images |
-| 16GB RAM | 16 (in Cloud Run), 6 (local) | Every ~240 images |
 
 ## Docker Deployment
 
@@ -298,89 +352,6 @@ gcloud builds submit --config cloudbuild.yaml
 ```
 
 **Note**: Since this app is deployed through GitHub to Cloud Run, environment variables and secrets are configured as runtime variables in the Cloud Run service, not through .env files.
-
-## Shell Scripts
-
-The repository includes multiple shell scripts for various tasks:
-
-1. **Artist Scraping Scripts**:
-   - `scrape_artists.sh` / `scrape_artists.ps1`: Scrape artist directory
-   - `parse-artists.js`: Process artist data
-
-2. **Keyword Processing Scripts**:
-   - `process_all_KWs.sh`: Process all keywords
-   - `clean_launch_kws.sh`: Clean and launch keyword scraping
-   - `fix_json_kws.sh`: Fix JSON keyword files
-
-3. **Execution Scripts**:
-   - `run_with_delay.sh`: Run scraper with delay
-   - `run_timed_kws.sh`: Run with time constraints
-   - `run_parallel_kws.sh`: Run in parallel
-   - `run_with_memory.sh`: Run with memory management
-
-4. **Category-Specific Scripts**:
-   - `scrape_all_asian_art_queries.ps1`
-   - `scrape_all_collectibles_queries.ps1`
-   - `scrape_all_firearms_queries.ps1`
-   - `scrape_all_furniture_queries.ps1`
-
-5. **Utility Scripts**:
-   - `start_local_server.sh`: Start local server
-   - `setup_image_bucket.sh`: Set up GCS bucket
-   - `analyze_bucket.py`: Analyze GCS bucket contents
-
-## Usage Examples
-
-```bash
-# Basic search
-curl "http://localhost:8080/api/search?query=furniture"
-
-# Search with price range
-curl "http://localhost:8080/api/search?query=furniture&priceResult%5Bmin%5D=1750&priceResult%5Bmax%5D=3250"
-
-# Search with image saving
-curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true"
-
-# Search with custom storage bucket
-curl "http://localhost:8080/api/search?query=furniture&saveToGcs=true&saveImages=true&bucket=custom-bucket-name"
-
-# Furniture subcategory with auto-pagination
-curl "http://localhost:8080/api/furniture/scrape/Chairs?fetchAllPages=true"
-
-# Start a background scraping job
-curl -X POST "http://localhost:8080/api/scraper/start" \
-     -H "Content-Type: application/json" \
-     -d '{"category":"furniture", "maxPages":10, "saveToGcs":true, "saveImages":true}'
-```
-
-## Performance Optimization
-
-- **Browser Reuse**: The scraper reuses browser instances to reduce resource consumption
-- **Dynamic Concurrency**: Automatically adjusts parallel operations based on available memory
-- **Environment-Specific Configuration**: Optimizes settings for Cloud Run vs local environments
-- **Memory-Aware Processing**: Scales batch sizes and restart frequency based on resource availability
-- **Adaptive Timeout Management**: Uses custom timeout settings for varying network conditions
-
-### Environment Configuration Options
-
-Configure the scraper's resource usage with environment variables:
-
-```bash
-# Set maximum memory available to the application (in GB)
-MAX_MEMORY_GB=8
-
-# Set explicit concurrency for image downloads (overrides automatic calculation)
-IMAGE_CONCURRENCY=10
-
-# Set environment type (cloud or local) to adjust optimization strategies
-ENVIRONMENT=cloud
-```
-
-These can also be passed as URL parameters to the API endpoints:
-
-```bash
-curl "http://localhost:8080/api/search?query=furniture&saveImages=true&maxMemoryGB=8&imageConcurrency=10"
-```
 
 ## License
 
