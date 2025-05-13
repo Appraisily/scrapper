@@ -1,0 +1,34 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Structure
+
+## Core Components
+
+- [src/server.js](mdc:src/server.js) - Main Express server setup and entry point
+- [src/scrapers/](mdc:src/scrapers/) - Contains scraper implementations 
+- [src/routes/](mdc:src/routes/) - API endpoints and request handling
+- [src/utils/](mdc:src/utils/) - Utility functions and storage management
+
+## Scraper Components
+
+- [src/scrapers/invaluable/](mdc:src/scrapers/invaluable/) - Main scraper implementation for Invaluable
+- [src/scrapers/artist-directory-scraper.js](mdc:src/scrapers/artist-directory-scraper.js) - Artist directory scraper
+
+## API Routes
+
+- [src/routes/search.js](mdc:src/routes/search.js) - Main search endpoint with options
+- [src/routes/scraper.js](mdc:src/routes/scraper.js) - Scraper job management
+- [src/routes/general-scraper.js](mdc:src/routes/general-scraper.js) - General scraping endpoints
+
+## Utility Components
+
+- [src/utils/search-storage.js](mdc:src/utils/search-storage.js) - Storage service for search results
+- [src/utils/storage-manager.js](mdc:src/utils/storage-manager.js) - Storage management utilities
+
+## Automation Scripts
+
+- [scripts/](mdc:scripts/) - Contains various automation scripts
+- [*.sh files](mdc:run_with_delay.sh) - Shell scripts for running scrapers with different parameters

@@ -1,0 +1,61 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# API Usage Guide
+
+## Search Endpoint
+
+```
+GET /api/search
+```
+
+The main search endpoint with comprehensive parameter support.
+
+### Key Parameters
+
+- `query` - Main search term
+- `priceResult[min]` and `priceResult[max]` - Price range filtering
+- `fetchAllPages=true` - Automatically paginate through all results
+- `maxPages=N` - Limit the maximum number of pages to fetch
+- `saveToGcs=true` - Save results to Google Cloud Storage
+- `saveImages=true` - Download and save item images
+- `bucket` - Custom GCS bucket name
+
+### Usage Example
+
+```
+curl "http://localhost:8080/api/search?query=furniture&priceResult[min]=1750&priceResult[max]=3250&saveToGcs=true&saveImages=true"
+```
+
+## Scraper Management
+
+```
+POST /api/scraper/start
+GET /api/scraper/status/:jobId
+```
+
+Endpoints for starting and monitoring background scraping jobs.
+
+### Start Job Example
+
+```
+curl -X POST "http://localhost:8080/api/scraper/start" \
+     -H "Content-Type: application/json" \
+     -d '{"category":"furniture", "maxPages":10, "saveToGcs":true, "saveImages":true}'
+```
+
+## Category-Specific Endpoints
+
+```
+GET /api/invaluable/furniture/list
+GET /api/invaluable/furniture/info/:subcategory
+GET /api/invaluable/furniture/scrape/:subcategory
+```
+
+Specialized endpoints for category-specific operations.
+
+## Implementation Details
+
+The search API is implemented in [src/routes/search.js](mdc:src/routes/search.js), while the scraper job management is in [src/routes/scraper.js](mdc:src/routes/scraper.js).

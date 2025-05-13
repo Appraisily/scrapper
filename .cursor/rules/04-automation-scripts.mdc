@@ -1,0 +1,58 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Automation Scripts Guide
+
+## Execution Scripts
+
+- [run_with_delay.sh](mdc:run_with_delay.sh) - Run scraper with configurable delays between requests
+- [run_timed_kws.sh](mdc:run_timed_kws.sh) - Run with time constraints
+- [run_parallel_kws.sh](mdc:run_parallel_kws.sh) - Run multiple scraping jobs in parallel
+- [run_with_memory.sh](mdc:run_with_memory.sh) - Run with memory management
+- [simple_launch_kws.sh](mdc:simple_launch_kws.sh) - Simple launcher for keyword scraping
+- [clean_launch_kws.sh](mdc:clean_launch_kws.sh) - Clean and launch keyword scraping
+
+## Keyword Processing
+
+- [process_all_KWs.sh](mdc:process_all_KWs.sh) - Process all keywords from KWs.txt
+- [fix_json_kws.sh](mdc:fix_json_kws.sh) - Fix JSON keyword files
+
+## Category-Specific Scripts
+
+- [scrape_all_asian_art_queries.ps1](mdc:scrape_all_asian_art_queries.ps1) - Asian art category scraper
+- [scrape_all_collectibles_queries.ps1](mdc:scrape_all_collectibles_queries.ps1) - Collectibles category scraper
+- [scrape_all_firearms_queries.ps1](mdc:scrape_all_firearms_queries.ps1) - Firearms category scraper
+- [scrape_all_furniture_queries.ps1](mdc:scrape_all_furniture_queries.ps1) - Furniture category scraper
+
+## Artist Scraping Scripts
+
+- [scrape_artists.sh](mdc:scrape_artists.sh) / [scrape_artists.ps1](mdc:scrape_artists.ps1) - Scrape artist directory
+- [parse-artists.js](mdc:parse-artists.js) - Process artist data
+
+## Utility Scripts
+
+- [start_local_server.sh](mdc:start_local_server.sh) - Start local server
+- [setup_image_bucket.sh](mdc:setup_image_bucket.sh) - Set up GCS bucket
+- [analyze_bucket.py](mdc:analyze_bucket.py) - Analyze GCS bucket contents
+
+## Usage Examples
+
+### Running a Search with Delay
+
+```bash
+./run_with_delay.sh "furniture" 3 # Search for "furniture" with 3 second delay
+```
+
+### Processing Multiple Keywords
+
+```bash
+./process_all_KWs.sh KWs.txt # Process all keywords from KWs.txt
+```
+
+### Category-Specific Scraping (Windows)
+
+```powershell
+./scrape_all_furniture_queries.ps1 # Scrape all furniture subcategories
+```

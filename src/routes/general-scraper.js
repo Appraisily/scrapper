@@ -7,6 +7,9 @@ const express = require('express');
 const router = express.Router();
 const { constructSearchUrl } = require('../scrapers/invaluable/url-builder');
 const SearchStorageService = require('../utils/search-storage');
+const fs = require('fs').promises;
+const path = require('path');
+const refreshService = require('../utils/refresh-service');
 
 // No need for global initialization - we'll instantiate per keyword
 
@@ -402,6 +405,35 @@ router.get('/scrape-artist', async (req, res) => {
       error: 'Failed to scrape artist',
       message: error.message
     });
+  }
+});
+
+// New endpoint to refresh all keywords in KWs.txt automatically
+router.get('/refresh-all', async (req, res) => {
+  try {
+    // Get the global scraper as a fallback
+    const globalScraper = req.app.locals.invaluableScraper;
+    if (!globalScraper) {
+      throw new Error('Scraper not initialized');
+    }
+    
+    console.log('Starting automated refresh of all keywords from KWs.txt');
+    
+    // Use the refresh service to handle the refresh process
+    const result = await refreshService.startRefresh();
+    
+    // Return the result
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Error in refresh-all endpoint:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to start refresh',
+        message: error.message
+      });
+    }
   }
 });
 

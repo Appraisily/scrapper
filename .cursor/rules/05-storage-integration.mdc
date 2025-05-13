@@ -1,0 +1,82 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Storage Integration Guide
+
+## Storage Components
+
+The project uses Google Cloud Storage (GCS) for saving scraping results, HTML content, and images.
+
+1. **SearchStorageService** 
+   - Located in [src/utils/search-storage.js](mdc:src/utils/search-storage.js)
+   - Main service for GCS integration
+   - Implements singleton pattern for efficient resource usage
+
+2. **StorageManager**
+   - Located in [src/utils/storage-manager.js](mdc:src/utils/storage-manager.js)
+   - Low-level storage utilities
+   - Handles direct bucket operations
+
+## Key Features
+
+- **JSON Data Storage**
+  - Saves search results and metadata to structured paths
+  - Implements batched operations for performance
+  - Supports customizable path structures
+
+- **Image Downloading**
+  - Browser-based image downloading to bypass protections
+  - Efficient batched downloads with automatic retries
+  - Structured file naming and path creation
+
+- **Storage Organization**
+  - Data organized by category/subcategory
+  - Standardized path structure for consistent retrieval
+  - Metadata inclusion for better searchability
+
+## Storage Path Structure
+
+```
+invaluable-data/
+  ├── {category}/
+  │   ├── search_results/
+  │   │   ├── page_1.json
+  │   │   ├── page_2.json
+  │   │   └── ...
+  │   ├── {subcategory}/
+  │   │   ├── images/
+  │   │   │   ├── lot123_1.jpg
+  │   │   │   ├── lot123_2.jpg
+  │   │   │   └── ...
+  │   │   └── data/
+  │   │       ├── page_1.json
+  │   │       └── ...
+  │   └── ...
+  └── ...
+```
+
+## Setup and Configuration
+
+- GCS integration requires proper authentication:
+  - In cloud environments, uses service account credentials from environment
+  - Locally, requires authentication with gcloud CLI
+  
+- Configure with environment variables:
+  - `GOOGLE_CLOUD_PROJECT`: GCP project ID
+  - `STORAGE_BUCKET`: Default GCS bucket name (default: invaluable-html-archive)
+
+- Setup script: [setup_image_bucket.sh](mdc:setup_image_bucket.sh) to create and configure GCS bucket
+
+## Usage in API
+
+Enable GCS storage with URL parameters:
+
+```
+?saveToGcs=true&saveImages=true&bucket=custom-bucket-name
+```
+
+## Analysis Tools
+
+Use [analyze_bucket.py](mdc:analyze_bucket.py) to analyze bucket contents and storage usage.
