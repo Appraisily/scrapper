@@ -5,6 +5,7 @@ const searchRouter = require('./routes/search');
 const scraperRouter = require('./routes/scraper');
 const generalScraperRouter = require('./routes/general-scraper');
 const imagesRouter = require('./routes/image-downloader');
+const artistOrchestratorRouter = require('./routes/artist-orchestrator');
 const { InvaluableScraper } = require('./scrapers/invaluable');
 
 const port = process.env.PORT || 8080;
@@ -100,6 +101,7 @@ async function startServer() {
     app.use('/api/scraper', scraperRouter);
     app.use('/api/invaluable', generalScraperRouter);
     app.use('/api/images', imagesRouter);
+    app.use('/api/orchestrator', artistOrchestratorRouter);
     
     const server = app.listen(port, '0.0.0.0', () => {
       console.log(`Server is now listening on port ${port}`);
