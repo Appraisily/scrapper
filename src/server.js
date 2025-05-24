@@ -1,136 +1,131 @@
 const express = require('express');
-const cors = require('cors');
-const path = require('path');
-const searchRouter = require('./routes/search');
-const scraperRouter = require('./routes/scraper');
-const generalScraperRouter = require('./routes/general-scraper');
+const cors    = require('cors');
+const path    = require('path');
+
+const searchRouter             = require('./routes/search');
+const scraperRouter            = require('./routes/scraper');
+const generalScraperRouter     = require('./routes/general-scraper');
 const artistOrchestratorRouter = require('./routes/artist-orchestrator');
-const dbSearchRouter = require('./routes/db-search');
-const { InvaluableScraper } = require('./scrapers/invaluable');
+const dbSearchRouter           = require('./routes/db-search');
+const { InvaluableScraper }    = require('./scrapers/invaluable');
+
+/* --------------------------------------------------------------------------- */
 
 const port = process.env.PORT || 8080;
-const app = express();
+const app  = express();
 
 const invaluableScraper = new InvaluableScraper();
-let isInitializing = false;
+let   isInitializing    = false;
 
-// Graceful shutdown handler
+/* --------------------------------------------------------------------------- */
+/* Graceful shutdown                                                           */
+/* --------------------------------------------------------------------------- */
+
 async function shutdown() {
-  console.log('Shutting down gracefully...');
+  console.log('Shutting down gracefully…');
   try {
     await invaluableScraper.close();
-  } catch (error) {
-    console.error('Error closing scraper:', error);
+  } catch (err) {
+    console.error('Error closing scraper:', err);
   }
   process.exit(0);
 }
 
-// Handle shutdown signals
 process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGINT' , shutdown);
 
-// Add health check endpoint
-app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'Invaluable Search API is running' });
-});
+/* --------------------------------------------------------------------------- */
+/* Basic middleware / plumbing                                                 */
+/* --------------------------------------------------------------------------- */
 
-// Add shutdown endpoint without authentication
-app.post('/admin/shutdown', (req, res) => {
+app.get('/', (_req, res) =>
+  res.json({ status: 'ok', message: 'Invaluable Search API is running' })
+);
+
+app.post('/admin/shutdown', (_req, res) => {
   res.json({ status: 'ok', message: 'Shutdown initiated' });
-  
-  // Delay shutdown to allow response to be sent
   console.log('Shutdown requested via admin endpoint');
-  setTimeout(() => {
-    shutdown();
-  }, 1000);
+  setTimeout(shutdown, 1000);
 });
 
-// Serve client interceptor tool
 app.use(express.static(path.join(__dirname, '../public')));
-
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Lazy initialization of the scraper
+/* --------------------------------------------------------------------------- */
+/* Lazy browser initialisation                                                 */
+/* --------------------------------------------------------------------------- */
+
 async function initializeScraper() {
   if (isInitializing) {
-    while (isInitializing) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    while (isInitializing) await new Promise(r => setTimeout(r, 100));
     return;
   }
-
-  if (invaluableScraper.initialized) {
-    return;
-  }
+  if (invaluableScraper.initialized) return;
 
   isInitializing = true;
-  console.log('Starting Invaluable scraper initialization on demand...');
-
+  console.log('Starting Invaluable scraper initialization on demand…');
   try {
     await invaluableScraper.initialize();
     app.locals.invaluableScraper = invaluableScraper;
-    console.log('Invaluable scraper initialized successfully');
-  } catch (error) {
-    console.error('Error initializing Invaluable scraper:', error);
-    throw error;
+    console.log('Invaluable scraper initialised successfully');
   } finally {
     isInitializing = false;
   }
 }
 
-// Set up middleware to initialize scraper only when needed
+// Initialise for any route that actually needs the shared browser
 app.use(['/api/search', '/api/scraper', '/api/invaluable'], async (req, res, next) => {
   try {
     await initializeScraper();
     next();
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({
       success: false,
-      error: 'Failed to initialize scraper',
-      message: error.message
+      error  : 'Failed to initialise scraper',
+      message: err.message,
     });
   }
 });
 
-// Optionally initialize scraper for orchestrator routes when requested
-app.use(['/api/orchestrator'], async (req, res, next) => {
-  // We only initialize the global scraper if it is requested via query param to reuse browser
-  // Otherwise, the orchestrator will instantiate its own scrapers internally.
+// Optional initialisation for orchestrator routes (only if ?initGlobalScraper=true)
+app.use('/api/orchestrator', async (req, res, next) => {
   if (req.query.initGlobalScraper === 'true') {
     try {
       await initializeScraper();
-    } catch (error) {
+    } catch (err) {
       return res.status(500).json({
         success: false,
-        error: 'Failed to initialize global scraper',
-        message: error.message,
+        error  : 'Failed to initialise global scraper',
+        message: err.message,
       });
     }
   }
   next();
 });
 
-// Initialize routes without starting the scraper automatically
-async function startServer() {
-  try {
-    // Set up routes
-    app.use('/api/search', searchRouter);
-    app.use('/api/scraper', scraperRouter);
-    app.use('/api/invaluable', generalScraperRouter);
-    app.use('/api/orchestrator', artistOrchestratorRouter);
-    app.use('/api/db-search', dbSearchRouter);
-    
-    const server = app.listen(port, '0.0.0.0', () => {
-      console.log(`Server is now listening on port ${port}`);
-    });
+/* --------------------------------------------------------------------------- */
+/* Route registration                                                          */
+/* --------------------------------------------------------------------------- */
 
-    server.on('error', (error) => {
-      console.error('Server error:', error);
+function startServer() {
+  try {
+    app.use('/api/search'      , searchRouter);
+    app.use('/api/scraper'     , scraperRouter);
+    app.use('/api/invaluable'  , generalScraperRouter);
+    app.use('/api/orchestrator', artistOrchestratorRouter);
+    app.use('/api/db-search'   , dbSearchRouter);
+
+    const server = app.listen(port, '0.0.0.0', () =>
+      console.log(`Server listening on port ${port}`)
+    );
+
+    server.on('error', err => {
+      console.error('Server error:', err);
       process.exit(1);
     });
-  } catch (error) {
-    console.error('Failed to start server:', error);
+  } catch (err) {
+    console.error('Failed to start server:', err);
     process.exit(1);
   }
 }
