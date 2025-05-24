@@ -92,6 +92,24 @@ app.use(['/api/search', '/api/scraper', '/api/invaluable'], async (req, res, nex
   }
 });
 
+// Optionally initialize scraper for orchestrator routes when requested
+app.use(['/api/orchestrator'], async (req, res, next) => {
+  // We only initialize the global scraper if it is requested via query param to reuse browser
+  // Otherwise, the orchestrator will instantiate its own scrapers internally.
+  if (req.query.initGlobalScraper === 'true') {
+    try {
+      await initializeScraper();
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to initialize global scraper',
+        message: error.message,
+      });
+    }
+  }
+  next();
+});
+
 // Initialize routes without starting the scraper automatically
 async function startServer() {
   try {

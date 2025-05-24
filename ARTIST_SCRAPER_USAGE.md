@@ -154,4 +154,45 @@ The orchestrator will automatically skip artists that have already been processe
 - **Memory usage**: The orchestrator loads the entire artists.json file in memory. For very large files, consider processing in batches.
 - **Rate limiting**: The default delay of 5 seconds between artists helps avoid rate limiting. Adjust based on your needs.
 - **Parallel processing**: The orchestrator processes artists sequentially. For faster processing, run multiple instances with different ranges.
-- **Image downloading**: Downloading images increases processing time and storage usage. Use `--no-images` to disable if needed. 
+- **Image downloading**: Downloading images increases processing time and storage usage. Use `--no-images` to disable if needed.
+
+## Using the Cloud Run HTTP Endpoint
+
+The orchestrator can now be triggered remotely via Cloud Run without SSHing into the container.  The service is deployed at:
+
+```
+https://scrapper-856401495068.us-central1.run.app
+```
+
+### Endpoint
+
+```
+GET /api/orchestrator/artists
+```
+
+Example minimal call (scrape first 10 artists):
+
+```bash
+curl "https://scrapper-856401495068.us-central1.run.app/api/orchestrator/artists"
+```
+
+Customising the run:
+
+| Query Param  | Meaning                                                       | Example                     |
+|--------------|---------------------------------------------------------------|-----------------------------|
+| `startIndex` | Start index in `artists.json`                                 | `startIndex=100`            |
+| `maxArtists` | Maximum artists to process (0 = all)                          | `maxArtists=50`             |
+| `useSubset`  | `false` to force use of full file instead of auto‐subset      | `useSubset=false`           |
+| `subsetSize` | How many artists to include in `artists_subset.json`          | `subsetSize=25`             |
+
+The endpoint returns **202 Accepted** immediately:
+
+```json
+{
+  "success": true,
+  "message": "Artist orchestrator job started",
+  "options": { "startIndex": 0, "maxArtists": 10, "artistsFilePath": "artists_subset.json" }
+}
+```
+
+The actual scraping progress is logged to Cloud Run logs and is not part of the HTTP response. 
