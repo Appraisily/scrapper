@@ -319,6 +319,44 @@ The script features:
 - Configurable maximum restart attempts
 - Detailed logging of progress
 
+## Automated Keyword Refresh (Cloud Native)
+
+Scraping thousands of terms no longer requires a terminal window. The project now ships with **two complementary options** that let Google Cloud handle orchestration for you.
+
+### 1. HTTP-triggered refresh (Cloud Scheduler → Cloud Run)
+
+* Endpoint: `GET /api/invaluable/refresh-all`
+* Reads every keyword in `KWs.txt`, then streams all pages for each term to the configured GCS bucket.
+* Returns immediately with a JSON status block while the scrape continues in the same container.
+
+Create a Cloud Scheduler job that pings the endpoint on your desired cron (daily, weekly, etc.). A complete, copy-paste guide lives in [`CLOUD_SCHEDULER_SETUP.md`](CLOUD_SCHEDULER_SETUP.md).
+
+### 2. Container-command refresh (`npm run refresh`)
+
+Sometimes you prefer the work to happen in a **one-shot job** instead of a long-lived service. A dedicated CLI wrapper now exists:
+
+```bash
+npm run refresh       # locally or inside any container
+```
+
+Under the hood this executes `src/cli/refresh-all.js`, which calls the very same logic as the HTTP endpoint but without Express. This design makes it perfect for **Cloud Run Jobs**:
+
+```bash
+# one-time manual execution
+gcloud run jobs execute keyword-refresh --project=<PROJECT_ID>
+
+# or schedule it (Cloud Scheduler → Cloud Run Job)
+gcloud scheduler jobs create run keyword-refresh \
+  --schedule="0 2 * * *" \  # 2 AM daily
+  --location=<REGION> \
+  --uri=https://run.googleapis.com/apis/run.googleapis.com/v1/namespaces/<PROJECT_ID>/jobs/keyword-refresh:run \
+  --oidc-service-account=scheduler-invoker@<PROJECT_ID>.iam.gserviceaccount.com
+```
+
+> **Tip**   Set `STORAGE_BUCKET` at deploy time if you want something other than the default `invaluable-html-archive-images` bucket.
+
+With either path in place the scraper becomes fully hands-free—update `KWs.txt`, redeploy the container, and let Google Cloud do the rest.
+
 ## Installation
 
 1. Clone the repository
