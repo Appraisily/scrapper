@@ -118,4 +118,28 @@ const refreshService = require('./utils/refresh-service');
 const result = await refreshService.startRefresh();
 ```
 
-This modular design makes the codebase more maintainable and extensible. 
+This modular design makes the codebase more maintainable and extensible.
+
+## Triggering the Artist Orchestrator
+
+If you want Cloud Scheduler to iterate through a subset of the *artists.json* file (for example the first 10 artists) and trigger the full scraping workflow, use the new `/api/orchestrator/artists` endpoint that was added in PR #??? (this change).
+
+Example Cloud Scheduler job configuration:
+
+```
+Target type : HTTP
+URL         : https://scrapper-856401495068.us-central1.run.app/api/orchestrator/artists?maxArtists=10
+Method      : GET
+Auth Header : Add OIDC token (service account with *Cloud Run Invoker* role)
+```
+
+Query parameters you can tweak:
+
+| Param            | Description                                             | Default |
+|------------------|---------------------------------------------------------|---------|
+| `startIndex`     | Start position inside artists array                     | `0`     |
+| `maxArtists`     | Maximum number of artists to process                    | `10`    |
+| `useSubset`      | `true` to automatically create/use `artists_subset.json`| `true`  |
+| `subsetSize`     | How many artists to include in the subset file          | `10`    |
+
+Because the orchestrator runs potentially for a long time, the endpoint returns HTTP **202 Accepted** immediately so Cloud Scheduler does not time-out. All progress is visible in the Cloud Run logs. 
