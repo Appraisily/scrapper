@@ -5,10 +5,9 @@ const path    = require('path');
 const searchRouter             = require('./routes/search');
 const scraperRouter            = require('./routes/scraper');
 const generalScraperRouter     = require('./routes/general-scraper');
-const imagesRouter             = require('./routes/image-downloader');
 const artistOrchestratorRouter = require('./routes/artist-orchestrator');
-
-const { InvaluableScraper } = require('./scrapers/invaluable');
+const dbSearchRouter           = require('./routes/db-search');
+const { InvaluableScraper }    = require('./scrapers/invaluable');
 
 /* --------------------------------------------------------------------------- */
 
@@ -76,21 +75,18 @@ async function initializeScraper() {
 }
 
 // Initialise for any route that actually needs the shared browser
-app.use(
-  ['/api/search', '/api/scraper', '/api/invaluable', '/api/images'],
-  async (req, res, next) => {
-    try {
-      await initializeScraper();
-      next();
-    } catch (err) {
-      res.status(500).json({
-        success: false,
-        error  : 'Failed to initialise scraper',
-        message: err.message,
-      });
-    }
+app.use(['/api/search', '/api/scraper', '/api/invaluable'], async (req, res, next) => {
+  try {
+    await initializeScraper();
+    next();
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error  : 'Failed to initialise scraper',
+      message: err.message,
+    });
   }
-);
+});
 
 // Optional initialisation for orchestrator routes (only if ?initGlobalScraper=true)
 app.use('/api/orchestrator', async (req, res, next) => {
@@ -117,8 +113,8 @@ function startServer() {
     app.use('/api/search'      , searchRouter);
     app.use('/api/scraper'     , scraperRouter);
     app.use('/api/invaluable'  , generalScraperRouter);
-    app.use('/api/images'      , imagesRouter);
     app.use('/api/orchestrator', artistOrchestratorRouter);
+    app.use('/api/db-search'   , dbSearchRouter);
 
     const server = app.listen(port, '0.0.0.0', () =>
       console.log(`Server listening on port ${port}`)
